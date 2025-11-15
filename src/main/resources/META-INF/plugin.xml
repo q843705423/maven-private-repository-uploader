@@ -1,26 +1,80 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>org.jetbrains.plugins.template</id>
-    <name>IntelliJ Platform Plugin Template</name>
-    <vendor>JetBrains</vendor>
+    <id>com.maven.privateuploader</id>
+    <name>Maven Private Repository Uploader</name>
+    <vendor email="support@company.com" url="https://github.com/your-org/maven-private-repository-uploader">Your Organization</vendor>
 
+    <description><![CDATA[
+    Maven私仓依赖上传插件
+
+    主要功能：
+    - 分析当前Maven项目的所有依赖（包括传递依赖）
+    - 通过REST接口检查依赖在私仓中的存在性
+    - 一键上传缺失的依赖到Maven私仓
+    - 支持进度显示和批量操作
+    - 兼容主流Maven私仓（Nexus、Artifactory等）
+
+    使用场景：
+    解决甲方断网环境下，开发者本地依赖需要"搬运"到私有Maven仓库的问题。
+    ]]></description>
+
+    <!-- Plugin version -->
+    <version>2.1.0</version>
+
+    <!-- CHANGELOG -->
+    <change-notes><![CDATA[
+    ### 2.1.0
+    - 初始版本发布
+    - 实现Maven依赖分析功能
+    - 实现私仓预检查功能
+    - 实现依赖上传功能
+    - 提供完整的UI界面
+    ]]></change-notes>
+
+    <!-- Vendor and product links -->
+    <vendor url="https://your-company.com">Your Organization</vendor>
+    <idea-version since-build="242" until-build="252.*"/>
+
+    <!-- Dependencies -->
     <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.idea.maven</depends>
 
-    <resource-bundle>messages.MyBundle</resource-bundle>
-
+    <!-- Extensions -->
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="org.jetbrains.plugins.template.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
-        <postStartupActivity implementation="org.jetbrains.plugins.template.startup.MyProjectActivity" />
+        <!-- 配置页面 -->
+        <applicationConfigurable
+                parentId="tools"
+                instance="com.maven.privateuploader.config.PrivateRepoConfigurable"
+                id="com.maven.privateuploader.config"
+                displayName="Maven私仓上传"/>
+
+        <!-- 服务注册 -->
+        <applicationService
+                serviceImplementation="com.maven.privateuploader.state.PrivateRepoSettings"/>
     </extensions>
 
+    <!-- Actions -->
     <actions>
-        <action id="org.jetbrains.plugins.template.HelloWorldAction"
-                class="org.jetbrains.plugins.template.actions.HelloWorldAction"
-                text="Hello World Action"
-                description="Show a customizable Hello World message">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        <!-- 项目右键菜单 -->
+        <action id="com.maven.privateuploader.action.UploadMavenDependenciesAction"
+                class="com.maven.privateuploader.action.UploadMavenDependenciesAction"
+                text="上传Maven依赖到私仓..."
+                description="分析项目Maven依赖并上传到私有仓库"
+                icon="/icons/maven-upload.svg">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-            <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift H"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift M"/>
+        </action>
+
+        <!-- Tools菜单 -->
+        <action id="com.maven.privateuploader.action.ToolsMenuUploadAction"
+                class="com.maven.privateuploader.action.UploadMavenDependenciesAction"
+                text="上传Maven依赖到私仓..."
+                description="分析项目Maven依赖并上传到私有仓库">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
     </actions>
+
+    <!-- Resource Bundle -->
+    <resource-bundle>messages.PrivateUploaderBundle</resource-bundle>
 </idea-plugin>
