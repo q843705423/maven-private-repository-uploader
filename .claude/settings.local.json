@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(java:*)",
+      "Bash(./gradlew:*)",
+      "WebSearch"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
