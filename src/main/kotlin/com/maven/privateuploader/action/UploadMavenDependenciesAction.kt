@@ -1,5 +1,6 @@
 package com.maven.privateuploader.action
 
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
@@ -22,12 +23,17 @@ class UploadMavenDependenciesAction : AnAction() {
         templatePresentation.description = "分析项目Maven依赖并上传到私有仓库"
     }
 
+    override fun getActionUpdateThread(): ActionUpdateThread {
+        // 在EDT线程中更新Action状态
+        return ActionUpdateThread.EDT
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
         val project: Project = e.getRequiredData(CommonDataKeys.PROJECT)
         val uploadService = project.service<DependencyUploadService>()
 
         // 检查是否为Maven项目
-        if (!uploadService.isMavenProject()) {
+        if (!uploadService.isMavenProject(project)) {
             Messages.showErrorDialog(
                 project,
                 "当前项目不是Maven项目，无法使用此功能。\n\n请确保当前项目包含pom.xml文件或已在IDEA中正确导入为Maven项目。",

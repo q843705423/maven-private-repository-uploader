@@ -17,19 +17,21 @@ import com.maven.privateuploader.model.RepositoryConfig
  * 负责协调依赖分析、预检查和上传的整个流程
  */
 @Service(Service.Level.PROJECT)
-class DependencyUploadService(private val project: Project) {
+class DependencyUploadService {
 
     private val logger = thisLogger()
 
     /**
      * 执行完整的依赖分析、预检查和上传流程
      *
+     * @param project 当前项目
      * @param config 私仓配置
      * @param onAnalysisComplete 分析完成回调
      * @param onCheckComplete 检查完成回调
      * @param onUploadComplete 上传完成回调
      */
     fun executeUploadFlow(
+        project: Project,
         config: RepositoryConfig,
         onAnalysisComplete: (List<DependencyInfo>) -> Unit = {},
         onCheckComplete: (List<DependencyInfo>) -> Unit = {},
@@ -75,6 +77,7 @@ class DependencyUploadService(private val project: Project) {
     /**
      * 上传选中的依赖
      *
+     * @param project 当前项目
      * @param config 私仓配置
      * @param dependencies 依赖列表
      * @param selectedDependencies 要上传的依赖
@@ -82,6 +85,7 @@ class DependencyUploadService(private val project: Project) {
      * @param onComplete 完成回调
      */
     fun uploadSelectedDependencies(
+        project: Project,
         config: RepositoryConfig,
         dependencies: List<DependencyInfo>,
         selectedDependencies: List<DependencyInfo>,
@@ -148,7 +152,7 @@ class DependencyUploadService(private val project: Project) {
     /**
      * 检查项目是否为Maven项目
      */
-    fun isMavenProject(): Boolean {
+    fun isMavenProject(project: Project): Boolean {
         return try {
             val analyzer = MavenDependencyAnalyzer(project)
             analyzer.isMavenProject()
@@ -161,7 +165,7 @@ class DependencyUploadService(private val project: Project) {
     /**
      * 获取Maven项目信息
      */
-    fun getMavenProjectInfo(): String {
+    fun getMavenProjectInfo(project: Project): String {
         return try {
             val analyzer = MavenDependencyAnalyzer(project)
             if (!analyzer.isMavenProject()) {

@@ -2,6 +2,9 @@ package com.maven.privateuploader.ui
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.progress.ProgressIndicator
+import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.components.JBLabel
@@ -132,8 +135,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     }
 
     private fun createDependencyTable() {
-        tableModel = DependencyTableModel()
-        dependencyTable = JTable(tableModel)
+        // 使用DependencyTableModel的createTable方法来创建带渲染器的表格
+        dependencyTable = DependencyTableModel.createTable()
+        tableModel = dependencyTable!!.model as DependencyTableModel
 
         // 设置表格属性
         dependencyTable!!.autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
@@ -142,12 +146,13 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
         // 设置列宽
         val columnModel = dependencyTable!!.columnModel
-        columnModel.getColumn(0).preferredWidth = 200 // GroupId
-        columnModel.getColumn(1).preferredWidth = 150 // ArtifactId
-        columnModel.getColumn(2).preferredWidth = 100 // Version
-        columnModel.getColumn(3).preferredWidth = 80  // Packaging
-        columnModel.getColumn(4).preferredWidth = 120 // 状态
-        columnModel.getColumn(5).preferredWidth = 300 // 路径
+        columnModel.getColumn(0).preferredWidth = 50  // 选择
+        columnModel.getColumn(1).preferredWidth = 200 // GroupId
+        columnModel.getColumn(2).preferredWidth = 150 // ArtifactId
+        columnModel.getColumn(3).preferredWidth = 100 // Version
+        columnModel.getColumn(4).preferredWidth = 80  // Packaging
+        columnModel.getColumn(5).preferredWidth = 120 // 状态
+        columnModel.getColumn(6).preferredWidth = 300 // 路径
     }
 
     private fun createStatusBar() {
@@ -171,7 +176,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
      * 初始化依赖分析
      */
     private fun initializeDependencies() {
-        if (!uploadService.isMavenProject()) {
+        if (!uploadService.isMavenProject(project)) {
             JOptionPane.showMessageDialog(
                 this.contentPane,
                 "当前项目不是Maven项目，无法使用此功能",
@@ -182,54 +187,93 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         }
 
         // 更新项目信息
-        val projectInfo = uploadService.getMavenProjectInfo()
+        val projectInfo = uploadService.getMavenProjectInfo(project)
         projectInfoLabel!!.text = projectInfo
 
         // 检查配置
         config = PrivateRepoConfigurable.getConfig()
+        var configComplete = true
+
         if (!config!!.enabled) {
-            JOptionPane.showMessageDialog(
-                this.contentPane,
-                "私仓上传功能未启用，请先在设置中配置私仓信息",
-                "提示",
-                JOptionPane.INFORMATION_MESSAGE
-            )
-            openSettings()
-            return
+            updateStatus("私仓上传功能未启用，仅显示依赖列表")
+            configComplete = false
         }
 
         if (!config!!.isValid()) {
-            JOptionPane.showMessageDialog(
-                this.contentPane,
-                "私仓配置不完整，请检查设置中的配置信息",
-                "错误",
-                JOptionPane.ERROR_MESSAGE
-            )
-            openSettings()
-            return
+            updateStatus("私仓配置不完整，仅显示依赖列表")
+            configComplete = false
         }
 
-        // 开始依赖分析流程
-        uploadService.executeUploadFlow(
-            config!!,
-            onAnalysisComplete = { deps ->
-                ApplicationManager.getApplication().invokeLater {
-                    dependencies = deps
-                    tableModel!!.setDependencies(deps)
-                    updateStatus("分析完成，共发现 ${deps.size} 个依赖")
+        // 先进行依赖分析（不依赖私仓配置）
+        analyzeDependenciesOnly()
+
+        // 如果配置完整，才进行私仓检查
+        if (configComplete) {
+            // 开始完整的上传流程（包括私仓检查）
+            uploadService.executeUploadFlow(
+                project,
+                config!!,
+                onAnalysisComplete = { deps ->
+                    ApplicationManager.getApplication().invokeLater {
+                        dependencies = deps
+                        tableModel!!.setDependencies(deps)
+                        updateStatus("分析完成，共发现 ${deps.size} 个依赖")
+                    }
+                },
+                onCheckComplete = { deps ->
+                    ApplicationManager.getApplication().invokeLater {
+                        dependencies = deps
+                        tableModel!!.setDependencies(deps)
+                        val missingCount = deps.count { it.checkStatus == CheckStatus.MISSING }
+                        val existsCount = deps.count { it.checkStatus == CheckStatus.EXISTS }
+                        val errorCount = deps.count { it.checkStatus == CheckStatus.ERROR }
+                        updateStatus("检查完成: 缺失=$missingCount, 已存在=$existsCount, 错误=$errorCount")
+                    }
                 }
-            },
-            onCheckComplete = { deps ->
-                ApplicationManager.getApplication().invokeLater {
-                    dependencies = deps
-                    tableModel!!.setDependencies(deps)
-                    val missingCount = deps.count { it.checkStatus == CheckStatus.MISSING }
-                    val existsCount = deps.count { it.checkStatus == CheckStatus.EXISTS }
-                    val errorCount = deps.count { it.checkStatus == CheckStatus.ERROR }
-                    updateStatus("检查完成: 缺失=$missingCount, 已存在=$existsCount, 错误=$errorCount")
+            )
+        }
+    }
+
+    /**
+     * 仅进行依赖分析（不依赖私仓配置）
+     */
+    private fun analyzeDependenciesOnly() {
+        updateStatus("正在分析依赖...")
+
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "分析Maven依赖", true) {
+            override fun run(indicator: ProgressIndicator) {
+                try {
+                    // 创建分析器并分析依赖
+                    val analyzer = com.maven.privateuploader.analyzer.MavenDependencyAnalyzer(project)
+                    val deps = analyzer.analyzeDependencies(indicator)
+
+                    // 在EDT线程中更新UI
+                    logger.info("准备更新UI，依赖数量: ${deps.size}")
+                    ApplicationManager.getApplication().invokeLater {
+                        logger.info("在EDT线程中更新UI，依赖数量: ${deps.size}")
+                        logger.info("tableModel是否为null: ${tableModel == null}")
+
+                        dependencies = deps
+                        tableModel!!.setDependencies(deps)
+                        updateStatus("分析完成，共发现 ${deps.size} 个依赖（私仓检查已跳过）")
+
+                        logger.info("UI更新完成，表格行数: ${tableModel!!.rowCount}")
+
+                        // 禁用上传按钮（因为没有配置私仓）
+                        uploadButton?.isEnabled = false
+                        uploadButton?.text = "需要配置私仓"
+
+                        logger.info("上传按钮状态已更新")
+                    }
+
+                } catch (e: Exception) {
+                    logger.error("依赖分析时发生错误", e)
+                    ApplicationManager.getApplication().invokeLater {
+                        updateStatus("依赖分析失败: ${e.message}")
+                    }
                 }
             }
-        )
+        })
     }
 
     /**
@@ -308,6 +352,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         progressDialog.show()
 
         uploadService.uploadSelectedDependencies(
+            project,
             config!!,
             dependencies,
             selectedDependencies,

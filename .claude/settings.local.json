@@ -4,7 +4,9 @@
       "Bash(java:*)",
       "Bash(./gradlew:*)",
       "WebSearch",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

@@ -18,7 +18,7 @@ import javax.swing.table.DefaultTableCellRenderer
 class DependencyTableModel : AbstractTableModel() {
 
     private var dependencies: List<DependencyInfo> = mutableListOf()
-    private val columnNames = arrayOf("GroupId", "ArtifactId", "Version", "Packaging", "状态", "本地路径")
+    private val columnNames = arrayOf("选择", "GroupId", "ArtifactId", "Version", "Packaging", "状态", "本地路径")
 
     /**
      * 列名
@@ -48,12 +48,13 @@ class DependencyTableModel : AbstractTableModel() {
         val dependency = dependencies[rowIndex]
 
         return when (columnIndex) {
-            0 -> dependency.groupId
-            1 -> dependency.artifactId
-            2 -> dependency.version
-            3 -> dependency.packaging
-            4 -> dependency.checkStatus
-            5 -> dependency.localPath
+            0 -> dependency.selected  // 选择列
+            1 -> dependency.groupId
+            2 -> dependency.artifactId
+            3 -> dependency.version
+            4 -> dependency.packaging
+            5 -> dependency.checkStatus
+            6 -> dependency.localPath
             else -> ""
         }
     }
@@ -63,7 +64,8 @@ class DependencyTableModel : AbstractTableModel() {
      */
     override fun getColumnClass(columnIndex: Int): Class<*> {
         return when (columnIndex) {
-            4 -> CheckStatus::class.java // 状态列
+            0 -> java.lang.Boolean::class.java  // 选择列
+            5 -> CheckStatus::class.java       // 状态列
             else -> String::class.java
         }
     }
@@ -72,15 +74,19 @@ class DependencyTableModel : AbstractTableModel() {
      * 单元格是否可编辑
      */
     override fun isCellEditable(rowIndex: Int, columnIndex: Int): Boolean {
-        // 状态列不可编辑
-        return false
+        // 只有选择列可编辑
+        return columnIndex == 0
     }
 
     /**
      * 设置单元格值（仅支持选择状态）
      */
     override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
-        // 这个表格的数据只能通过其他方法修改，不直接支持编辑
+        if (columnIndex == 0 && rowIndex >= 0 && rowIndex < dependencies.size) {
+            // 更新选择状态
+            dependencies[rowIndex].selected = value as? Boolean ?: false
+            fireTableCellUpdated(rowIndex, columnIndex)
+        }
     }
 
     /**
@@ -146,8 +152,12 @@ class DependencyTableModel : AbstractTableModel() {
         fun createTable(): JTable {
             val table = JTable(DependencyTableModel())
 
-            // 设置选择状态列的渲染器和编辑器
-            table.columnModel.getColumn(4).cellRenderer = StatusCellRenderer()
+            // 设置选择列的渲染器和编辑器
+            table.columnModel.getColumn(0).cellRenderer = javax.swing.table.DefaultTableCellRenderer()
+            table.columnModel.getColumn(0).cellEditor = javax.swing.DefaultCellEditor(javax.swing.JCheckBox())
+
+            // 设置状态列的渲染器
+            table.columnModel.getColumn(5).cellRenderer = StatusCellRenderer()
 
             // 设置其他列的渲染器
             val defaultRenderer = DefaultTableCellRenderer()
