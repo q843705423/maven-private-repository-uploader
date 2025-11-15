@@ -6,7 +6,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBTable
+import javax.swing.JTable
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import com.maven.privateuploader.client.PrivateRepositoryClient
@@ -29,7 +29,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private val logger = thisLogger()
     private val uploadService = ApplicationManager.getApplication().getService(DependencyUploadService::class.java)
 
-    private var dependencyTable: JBTable? = null
+    private var dependencyTable: JTable? = null
     private var tableModel: DependencyTableModel? = null
     private var statusLabel: JBLabel? = null
     private var projectInfoLabel: JBLabel? = null
@@ -91,9 +91,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
         val panel = JPanel(BorderLayout())
         panel.add(projectInfoLabel!!, BorderLayout.CENTER)
-        panel.border = JBUI.Borders.compound(
-            JBUI.Borders.line(JBUI.CurrentTheme.ToolWindow.borderColor()),
-            JBUI.Borders.empty(10)
+        panel.border = javax.swing.BorderFactory.createCompoundBorder(
+            javax.swing.BorderFactory.createLineBorder(java.awt.Color.GRAY),
+            javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10)
         )
 
         return panel
@@ -115,30 +115,30 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         uploadButton = JButton("上传选中依赖")
         uploadButton!!.addActionListener { uploadSelectedDependencies() }
 
-        val toolbar = JToolBar(SwingConstants.HORIZONTAL)
-        toolbar.isFloatable = false
-        toolbar.border = JBUI.Borders.empty(5, 0, 5, 0)
+        val toolbarPanel = JPanel()
+        toolbarPanel.layout = java.awt.FlowLayout(java.awt.FlowLayout.LEFT)
+        toolbarPanel.border = javax.swing.BorderFactory.createEmptyBorder(5, 0, 5, 0)
 
-        toolbar.add(checkAllButton)
-        toolbar.add(uncheckAllButton)
-        toolbar.addSeparator()
-        toolbar.add(refreshButton)
-        toolbar.addSeparator()
-        toolbar.add(configButton)
-        toolbar.add(Box.createHorizontalGlue())
-        toolbar.add(uploadButton)
+        toolbarPanel.add(checkAllButton)
+        toolbarPanel.add(uncheckAllButton)
+        toolbarPanel.add(javax.swing.Box.createHorizontalStrut(10))
+        toolbarPanel.add(refreshButton)
+        toolbarPanel.add(javax.swing.Box.createHorizontalStrut(10))
+        toolbarPanel.add(configButton)
+        toolbarPanel.add(javax.swing.Box.createHorizontalGlue())
+        toolbarPanel.add(uploadButton)
 
-        return toolbar
+        return toolbarPanel
     }
 
     private fun createDependencyTable() {
         tableModel = DependencyTableModel()
-        dependencyTable = JBTable(tableModel)
+        dependencyTable = JTable(tableModel)
 
         // 设置表格属性
         dependencyTable!!.autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
-        dependencyTable!!.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
-        dependencyTable!!.rowHeight = JBUI.scale(24)
+        dependencyTable!!.selectionModel.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
+        dependencyTable!!.rowHeight = 24
 
         // 设置列宽
         val columnModel = dependencyTable!!.columnModel

@@ -2,9 +2,7 @@ package com.maven.privateuploader.ui
 
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.components.JBProgressBar
-import com.intellij.util.ui.FormBuilder
-import com.intellij.util.ui.JBUI
+import javax.swing.JProgressBar
 import com.maven.privateuploader.model.DependencyInfo
 import com.maven.privateuploader.service.UploadSummary
 import java.awt.BorderLayout
@@ -17,9 +15,9 @@ import javax.swing.*
 class UploadProgressDialog(
     parent: DialogWrapper,
     private val dependencies: List<DependencyInfo>
-) : JDialog(parent.contentPane.window) {
+) : JDialog() {
 
-    private var progressBar: JBProgressBar? = null
+    private var progressBar: JProgressBar? = null
     private var progressLabel: JBLabel? = null
     private var statusLabel: JBLabel? = null
     private var logTextArea: JTextArea? = null
@@ -38,8 +36,8 @@ class UploadProgressDialog(
 
     private fun createComponents() {
         // 进度条
-        progressBar = JBProgressBar(0, dependencies.size)
-        progressBar!!.stringPainted = true
+        progressBar = JProgressBar(0, dependencies.size)
+        progressBar!!.isStringPainted = true
 
         // 标签
         progressLabel = JBLabel("准备上传...")
@@ -48,8 +46,8 @@ class UploadProgressDialog(
         // 日志区域
         logTextArea = JTextArea()
         logTextArea!!.isEditable = false
-        logTextArea!!.background = JBUI.CurrentTheme.Panel.background()
-        logTextArea!!.font = JBUI.Fonts.label()
+        logTextArea!!.background = java.awt.Color.WHITE
+        logTextArea!!.font = java.awt.Font(java.awt.Font.SANS_SERIF, java.awt.Font.PLAIN, 12)
         logScrollPane = JScrollPane(logTextArea)
         logScrollPane!!.preferredSize = java.awt.Dimension(550, 200)
     }
@@ -57,7 +55,7 @@ class UploadProgressDialog(
     private fun layoutComponents() {
         // 顶部信息面板
         val topPanel = JPanel(BorderLayout())
-        topPanel.border = JBUI.Borders.empty(10)
+        topPanel.border = javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10)
 
         val infoPanel = JPanel()
         infoPanel.add(progressLabel)
@@ -68,8 +66,8 @@ class UploadProgressDialog(
         topPanel.add(progressBar, BorderLayout.CENTER)
 
         // 主面板
-        val mainPanel = JPanel(BorderLayout(0, JBUI.scale(10)))
-        mainPanel.border = JBUI.Borders.empty(10)
+        val mainPanel = JPanel(BorderLayout(0, 10))
+        mainPanel.border = javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10)
         mainPanel.add(topPanel, BorderLayout.NORTH)
         mainPanel.add(JBLabel("上传日志:"), BorderLayout.CENTER)
         mainPanel.add(logScrollPane, BorderLayout.SOUTH)

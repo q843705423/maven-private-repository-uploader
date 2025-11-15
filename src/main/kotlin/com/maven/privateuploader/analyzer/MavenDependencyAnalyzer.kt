@@ -62,16 +62,12 @@ class MavenDependencyAnalyzer(private val project: Project) {
      */
     private fun analyzeProjectDependencies(mavenProject: MavenProject, dependencies: MutableSet<DependencyInfo>) {
         try {
-            // 获取所有依赖树
-            val dependencyTree = mavenProject.dependencyTree
-            if (dependencyTree != null) {
-                collectDependenciesFromNode(dependencyTree, dependencies)
-            }
-
-            // 获取测试依赖
-            val testDependencyTree = mavenProject.testDependencyTree
-            if (testDependencyTree != null) {
-                collectDependenciesFromNode(testDependencyTree, dependencies)
+            // 获取所有声明的依赖
+            mavenProject.dependencies.forEach { dependency ->
+                if (dependency.file != null && dependency.packaging == "jar") {
+                    val dependencyInfo = createDependencyInfo(dependency)
+                    dependencies.add(dependencyInfo)
+                }
             }
 
         } catch (e: Exception) {
@@ -80,47 +76,9 @@ class MavenDependencyAnalyzer(private val project: Project) {
     }
 
     /**
-     * 从依赖节点递归收集依赖
-     */
-    private fun collectDependenciesFromNode(node: MavenArtifactNode, dependencies: MutableSet<DependencyInfo>) {
-        val artifact = node.artifact
-
-        // 跳过项目自身的模块
-        if (isProjectModule(artifact)) {
-            logger.debug("跳过项目模块: ${artifact.groupId}:${artifact.artifactId}")
-            node.dependants.forEach { childNode ->
-                collectDependenciesFromNode(childNode, dependencies)
-            }
-            return
-        }
-
-        // 只处理jar类型的依赖（主要关注打包需要的依赖）
-        if (artifact.file != null && (artifact.packaging == "jar" || artifact.packaging == "aar")) {
-            val dependencyInfo = createDependencyInfo(artifact)
-            dependencies.add(dependencyInfo)
-        }
-
-        // 递归处理子依赖（传递依赖）
-        node.dependants.forEach { childNode ->
-            collectDependenciesFromNode(childNode, dependencies)
-        }
-    }
-
-    /**
-     * 判断是否为项目的模块
-     */
-    private fun isProjectModule(artifact: MavenArtifact): Boolean {
-        val mavenProjects = mavenProjectsManager.projects
-        return mavenProjects.any { mavenProject ->
-            mavenProject.mavenId.groupId == artifact.groupId &&
-            mavenProject.mavenId.artifactId == artifact.artifactId
-        }
-    }
-
-    /**
      * 创建依赖信息对象
      */
-    private fun createDependencyInfo(artifact: MavenArtifact): DependencyInfo {
+    private fun createDependencyInfo(artifact: org.jetbrains.idea.maven.model.MavenArtifact): DependencyInfo {
         val localPath = artifact.file?.absolutePath ?: ""
         val packaging = artifact.packaging ?: "jar"
 
@@ -135,6 +93,17 @@ class MavenDependencyAnalyzer(private val project: Project) {
         ).apply {
             // 默认选择缺失的依赖（这个逻辑将在预检查后更新）
             selected = false
+        }
+    }
+
+    /**
+     * 判断是否为项目的模块
+     */
+    private fun isProjectModule(artifact: org.jetbrains.idea.maven.model.MavenArtifact): Boolean {
+        val mavenProjects = mavenProjectsManager.projects
+        return mavenProjects.any { mavenProject ->
+            mavenProject.mavenId.groupId == artifact.groupId &&
+            mavenProject.mavenId.artifactId == artifact.artifactId
         }
     }
 

@@ -3,7 +3,7 @@ package com.maven.privateuploader.ui.table
 import com.intellij.ui.ColoredTableCellRenderer
 import com.intellij.ui.ColoredTextContainer
 import com.intellij.ui.SimpleTextAttributes
-import com.intellij.ui.table.JBTable
+import javax.swing.JTable
 import com.intellij.util.ui.JBUI
 import com.maven.privateuploader.model.CheckStatus
 import com.maven.privateuploader.model.DependencyInfo
@@ -143,8 +143,8 @@ class DependencyTableModel : AbstractTableModel() {
         /**
          * 创建带渲染器的表格
          */
-        fun createTable(): JBTable {
-            val table = JBTable(DependencyTableModel())
+        fun createTable(): JTable {
+            val table = JTable(DependencyTableModel())
 
             // 设置选择状态列的渲染器和编辑器
             table.columnModel.getColumn(4).cellRenderer = StatusCellRenderer()
@@ -154,7 +154,7 @@ class DependencyTableModel : AbstractTableModel() {
             table.setDefaultRenderer(String::class.java, defaultRenderer)
 
             // 设置行高
-            table.rowHeight = JBUI.scale(24)
+            table.rowHeight = 24
 
             return table
         }
@@ -176,19 +176,19 @@ class DependencyTableModel : AbstractTableModel() {
             if (value is CheckStatus) {
                 when (value) {
                     CheckStatus.EXISTS -> {
-                        append("已存在", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, JBUI.CurrentTheme.StatusBar.Success.color()))
+                        append("已存在", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.GREEN))
                     }
                     CheckStatus.MISSING -> {
-                        append("缺失", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, JBUI.CurrentTheme.StatusBar.Error.color()))
+                        append("缺失", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.RED))
                     }
                     CheckStatus.CHECKING -> {
-                        append("检查中", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, JBUI.CurrentTheme.StatusBar.Warning.color()))
+                        append("检查中", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.ORANGE))
                     }
                     CheckStatus.ERROR -> {
-                        append("错误", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, JBUI.CurrentTheme.StatusBar.Error.color()))
+                        append("错误", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.RED))
                     }
                     CheckStatus.UNKNOWN -> {
-                        append("未知", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, JBUI.CurrentTheme.StatusBar.Widget.color()))
+                        append("未知", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.GRAY))
                     }
                 }
             } else {
@@ -198,39 +198,3 @@ class DependencyTableModel : AbstractTableModel() {
     }
 }
 
-/**
- * 带选择功能的表格模型扩展
- */
-class SelectableDependencyTableModel : DependencyTableModel() {
-
-    override fun getColumnCount(): Int {
-        return super.getColumnCount() + 1 // 增加一列选择框
-    }
-
-    override fun getColumnName(column: Int): String {
-        return if (column == 0) "选择" else super.getColumnName(column - 1)
-    }
-
-    override fun getColumnClass(columnIndex: Int): Class<*> {
-        return if (columnIndex == 0) Boolean::class.java else super.getColumnClass(columnIndex - 1)
-    }
-
-    override fun isCellEditable(rowIndex: Int, columnIndex: Int): Boolean {
-        return columnIndex == 0 // 只有选择列可编辑
-    }
-
-    override fun getValueAt(rowIndex: Int, columnIndex: Int): Any {
-        return if (columnIndex == 0) {
-            getDependencyAt(rowIndex)?.selected ?: false
-        } else {
-            super.getValueAt(rowIndex, columnIndex - 1)
-        }
-    }
-
-    override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
-        if (columnIndex == 0 && value is Boolean) {
-            getDependencyAt(rowIndex)?.selected = value
-            fireTableRowsUpdated(rowIndex, rowIndex)
-        }
-    }
-}

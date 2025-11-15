@@ -40,11 +40,16 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
         }
 
         // 添加日志拦截器（仅在开发环境）
-        builder.addInterceptor(HttpLoggingInterceptor { message ->
-            logger.debug("HTTP: $message")
-        }.apply {
-            level = HttpLoggingInterceptor.Level.HEADERS
-        })
+        try {
+            val loggingInterceptor = Class.forName("okhttp3.logging.HttpLoggingInterceptor")
+            val interceptor = loggingInterceptor.getDeclaredConstructor().newInstance()
+            val setLevel = loggingInterceptor.getMethod("setLevel", Class.forName("okhttp3.logging.HttpLoggingInterceptor\$Level"))
+            val levelEnum = Class.forName("okhttp3.logging.HttpLoggingInterceptor\$Level").getField("HEADERS").get(null)
+            setLevel.invoke(interceptor, levelEnum)
+            builder.addInterceptor(interceptor as Interceptor)
+        } catch (e: Exception) {
+            logger.warn("无法创建HTTP日志拦截器: ${e.message}")
+        }
 
         builder.build()
     }
@@ -204,7 +209,7 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
                 else -> "application/octet-stream".toMediaType()
             }
 
-            val requestBody = file.asRequestBody(mediaType)
+            val requestBody = RequestBody.create(mediaType, file)
             val request = Request.Builder()
                 .url(url)
                 .put(requestBody)

@@ -81,9 +81,9 @@ class PrivateRepoConfigurable : Configurable {
 
         val panel = JPanel(BorderLayout())
         panel.add(infoLabel, BorderLayout.CENTER)
-        panel.border = JBUI.Borders.compound(
-            JBUI.Borders.line(JBUI.CurrentTheme.ToolWindow.borderColor()),
-            JBUI.Borders.empty(10)
+        panel.border = javax.swing.BorderFactory.createCompoundBorder(
+            javax.swing.BorderFactory.createLineBorder(java.awt.Color.GRAY),
+            javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10)
         )
 
         return panel
