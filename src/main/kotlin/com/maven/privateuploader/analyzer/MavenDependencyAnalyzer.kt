@@ -33,13 +33,28 @@ class MavenDependencyAnalyzer(private val project: Project) {
 
         val dependencies = mutableSetOf<DependencyInfo>()
 
-        // 获取所有Maven项目（包括子模块）
-        val allMavenProjects = mavenProjectsManager.projects
+        // 等待Maven项目完全加载（最多等待5秒，每次等待100ms）
+        var allMavenProjects = mavenProjectsManager.projects
+        var waitCount = 0
+        val maxWaitCount = 50  // 5秒 = 50 * 100ms
+        
+        while (allMavenProjects.isEmpty() && waitCount < maxWaitCount) {
+            logger.info("等待Maven项目加载... (${waitCount + 1}/$maxWaitCount)")
+            Thread.sleep(100)
+            allMavenProjects = mavenProjectsManager.projects
+            waitCount++
+        }
+        
+        if (allMavenProjects.isEmpty()) {
+            logger.warn("等待超时，Maven项目列表仍为空")
+        }
+
         val rootProjects = mavenProjectsManager.rootProjects
 
         logger.info("Maven项目信息:")
         logger.info("- 总项目数: ${allMavenProjects.size}")
         logger.info("- 根项目数: ${rootProjects.size}")
+        logger.info("- Maven项目管理器状态: ${mavenProjectsManager.state}")
 
         // 记录所有项目的详细信息
         allMavenProjects.forEachIndexed { index, project ->

@@ -45,6 +45,13 @@ class DependencyTableModel : AbstractTableModel() {
      * 单元格值
      */
     override fun getValueAt(rowIndex: Int, columnIndex: Int): Any {
+        if (rowIndex < 0 || rowIndex >= dependencies.size) {
+            return when (columnIndex) {
+                0 -> false  // 选择列
+                else -> ""
+            }
+        }
+        
         val dependency = dependencies[rowIndex]
 
         return when (columnIndex) {
@@ -93,7 +100,10 @@ class DependencyTableModel : AbstractTableModel() {
      * 设置依赖列表
      */
     fun setDependencies(dependencies: List<DependencyInfo>) {
-        this.dependencies = dependencies.toList()
+        val oldSize = this.dependencies.size
+        this.dependencies = dependencies.toMutableList()
+        val newSize = this.dependencies.size
+        // 使用fireTableDataChanged()通知所有监听器数据已更改
         fireTableDataChanged()
     }
 
@@ -152,8 +162,8 @@ class DependencyTableModel : AbstractTableModel() {
         fun createTable(): JTable {
             val table = JTable(DependencyTableModel())
 
-            // 设置选择列的渲染器和编辑器
-            table.columnModel.getColumn(0).cellRenderer = javax.swing.table.DefaultTableCellRenderer()
+            // 设置选择列的渲染器和编辑器（使用JTable默认的布尔渲染器）
+            // JTable会自动为Boolean类型使用复选框渲染器
             table.columnModel.getColumn(0).cellEditor = javax.swing.DefaultCellEditor(javax.swing.JCheckBox())
 
             // 设置状态列的渲染器

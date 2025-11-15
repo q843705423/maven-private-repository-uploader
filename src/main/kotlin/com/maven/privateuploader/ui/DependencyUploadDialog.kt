@@ -34,6 +34,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
     private var dependencyTable: JTable? = null
     private var tableModel: DependencyTableModel? = null
+    private var tableScrollPane: JBScrollPane? = null
     private var statusLabel: JBLabel? = null
     private var projectInfoLabel: JBLabel? = null
     private var checkAllButton: JButton? = null
@@ -50,6 +51,11 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         isModal = true
         setOKButtonText("关闭")
         init()
+        
+        // 提前开始初始化依赖分析
+        SwingUtilities.invokeLater {
+            initializeDependencies()
+        }
     }
 
     override fun createCenterPanel(): JComponent {
@@ -65,7 +71,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
         // 依赖表格
         createDependencyTable()
-        val tableScrollPane = JBScrollPane(dependencyTable)
+        tableScrollPane = JBScrollPane(dependencyTable)
 
         // 状态栏
         createStatusBar()
@@ -74,8 +80,11 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         val mainPanel = JPanel(BorderLayout(0, JBUI.scale(5)))
         mainPanel.border = JBUI.Borders.empty(10)
 
-        mainPanel.add(projectInfoPanel, BorderLayout.NORTH)
-        mainPanel.add(toolbarPanel, BorderLayout.NORTH)
+        // 将项目信息和工具栏放在一个垂直面板中
+        val topPanel = JPanel(BorderLayout())
+        topPanel.add(projectInfoPanel, BorderLayout.NORTH)
+        topPanel.add(toolbarPanel, BorderLayout.SOUTH)
+        mainPanel.add(topPanel, BorderLayout.NORTH)
 
         // 表格面板
         val tablePanel = JPanel(BorderLayout())
@@ -140,9 +149,10 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         tableModel = dependencyTable!!.model as DependencyTableModel
 
         // 设置表格属性
-        dependencyTable!!.autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
+        dependencyTable!!.autoResizeMode = JTable.AUTO_RESIZE_OFF  // 关闭自动调整，使用固定列宽
         dependencyTable!!.selectionModel.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
         dependencyTable!!.rowHeight = 24
+        dependencyTable!!.fillsViewportHeight = true  // 确保表格填充视口
 
         // 设置列宽
         val columnModel = dependencyTable!!.columnModel
@@ -162,14 +172,6 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
     override fun getPreferredFocusedComponent(): JComponent {
         return dependencyTable!!
-    }
-
-    override fun show() {
-        super.show()
-        // 对话框显示后立即开始分析
-        SwingUtilities.invokeLater {
-            initializeDependencies()
-        }
     }
 
     /**
@@ -204,10 +206,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
             configComplete = false
         }
 
-        // 先进行依赖分析（不依赖私仓配置）
-        analyzeDependenciesOnly()
-
-        // 如果配置完整，才进行私仓检查
+        // 如果配置完整，进行完整的分析流程（包括私仓检查）
         if (configComplete) {
             // 开始完整的上传流程（包括私仓检查）
             uploadService.executeUploadFlow(
@@ -215,23 +214,46 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                 config!!,
                 onAnalysisComplete = { deps ->
                     ApplicationManager.getApplication().invokeLater {
-                        dependencies = deps
-                        tableModel!!.setDependencies(deps)
-                        updateStatus("分析完成，共发现 ${deps.size} 个依赖")
+                        updateTableData(deps, "分析完成，共发现 ${deps.size} 个依赖")
                     }
                 },
                 onCheckComplete = { deps ->
                     ApplicationManager.getApplication().invokeLater {
-                        dependencies = deps
-                        tableModel!!.setDependencies(deps)
                         val missingCount = deps.count { it.checkStatus == CheckStatus.MISSING }
                         val existsCount = deps.count { it.checkStatus == CheckStatus.EXISTS }
                         val errorCount = deps.count { it.checkStatus == CheckStatus.ERROR }
-                        updateStatus("检查完成: 缺失=$missingCount, 已存在=$existsCount, 错误=$errorCount")
+                        updateTableData(deps, "检查完成: 缺失=$missingCount, 已存在=$existsCount, 错误=$errorCount")
                     }
                 }
             )
+        } else {
+            // 配置不完整时，仅进行依赖分析（不依赖私仓配置）
+            analyzeDependenciesOnly()
         }
+    }
+
+    /**
+     * 更新表格数据（统一方法）
+     */
+    private fun updateTableData(deps: List<DependencyInfo>, statusMessage: String) {
+        logger.info("更新表格数据，依赖数量: ${deps.size}")
+        
+        dependencies = deps
+        
+        // 确保表格和模型存在
+        if (tableModel == null || dependencyTable == null) {
+            logger.warn("表格或模型为null，无法更新")
+            updateStatus(statusMessage)
+            return
+        }
+        
+        // 更新模型数据（这会触发fireTableDataChanged）
+        tableModel!!.setDependencies(deps)
+        
+        logger.info("表格数据已更新，行数: ${tableModel!!.rowCount}")
+        
+        // 更新状态
+        updateStatus(statusMessage)
     }
 
     /**
@@ -250,20 +272,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                     // 在EDT线程中更新UI
                     logger.info("准备更新UI，依赖数量: ${deps.size}")
                     ApplicationManager.getApplication().invokeLater {
-                        logger.info("在EDT线程中更新UI，依赖数量: ${deps.size}")
-                        logger.info("tableModel是否为null: ${tableModel == null}")
-
-                        dependencies = deps
-                        tableModel!!.setDependencies(deps)
-                        updateStatus("分析完成，共发现 ${deps.size} 个依赖（私仓检查已跳过）")
-
-                        logger.info("UI更新完成，表格行数: ${tableModel!!.rowCount}")
-
-                        // 禁用上传按钮（因为没有配置私仓）
-                        uploadButton?.isEnabled = false
-                        uploadButton?.text = "需要配置私仓"
-
-                        logger.info("上传按钮状态已更新")
+                        updateTableData(deps, "分析完成，共发现 ${deps.size} 个依赖（私仓检查已跳过）")
                     }
 
                 } catch (e: Exception) {
@@ -303,8 +312,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         Thread {
             client.checkDependenciesExist(dependencies.toMutableList(), null)
             SwingUtilities.invokeLater {
-                tableModel!!.setDependencies(dependencies)
-                updateStatus("重新检查完成")
+                updateTableData(dependencies, "重新检查完成")
             }
         }.start()
     }
