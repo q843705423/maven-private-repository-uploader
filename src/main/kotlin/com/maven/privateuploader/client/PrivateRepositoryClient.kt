@@ -10,6 +10,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.buffer
 import okio.sink
+import okio.source
 import java.io.File
 import java.io.IOException
 import java.util.Base64
@@ -174,7 +175,17 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
         progressIndicator?.text2 = "上传依赖: ${dependency.getGAV()}"
 
         return try {
-            // 上传JAR文件
+            // 如果是POM类型的依赖（如父POM），只上传POM文件
+            if (dependency.packaging == "pom") {
+                val pomResult = uploadFile(dependency, jarFile, "pom")
+                if (!pomResult.success) {
+                    return pomResult
+                }
+                logger.info("父POM ${dependency.getGAV()} 上传成功")
+                return UploadResult(true, "上传成功")
+            }
+
+            // 对于JAR类型的依赖，上传JAR文件
             val jarResult = uploadFile(dependency, jarFile, "jar")
             if (!jarResult.success) {
                 return jarResult
@@ -227,7 +238,7 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
                 else -> "application/octet-stream".toMediaType()
             }
 
-            val requestBody = RequestBody.create(mediaType, file)
+            val requestBody = file.source().buffer().readByteArray().toRequestBody(mediaType)
             val request = Request.Builder()
                 .url(url)
                 .put(requestBody)

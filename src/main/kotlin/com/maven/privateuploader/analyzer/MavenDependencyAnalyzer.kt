@@ -106,11 +106,14 @@ class MavenDependencyAnalyzer(private val project: Project) {
             // 记录项目的基本信息
             logger.info("项目GAV: ${mavenProject.mavenId.groupId}:${mavenProject.mavenId.artifactId}:${mavenProject.mavenId.version}")
 
+            // 分析父POM
+            analyzeParentPom(mavenProject, dependencies)
+
             // 分析直接依赖
             logger.info("发现 ${mavenProject.dependencies.size} 个直接依赖")
             mavenProject.dependencies.forEachIndexed { index, dependency ->
                 logger.debug("直接依赖 $index: ${dependency.groupId}:${dependency.artifactId}:${dependency.version}, 文件: ${dependency.file}, 包装: ${dependency.packaging}")
-                if (dependency.file != null && dependency.packaging == "jar") {
+                if (shouldIncludeDependency(dependency, mavenProject)) {
                     val dependencyInfo = createDependencyInfo(dependency)
                     dependencies.add(dependencyInfo)
                     logger.debug("添加直接依赖: ${dependencyInfo.getGAV()}")
@@ -189,14 +192,14 @@ class MavenDependencyAnalyzer(private val project: Project) {
             return false
         }
 
-        // 只包含JAR包
-        if (artifact.packaging != "jar") {
-            logger.debug("跳过非JAR依赖: ${artifact.groupId}:${artifact.artifactId} (${artifact.packaging})")
+        // 包含JAR包和POM包（父POM的packaging是pom）
+        if (artifact.packaging != "jar" && artifact.packaging != "pom") {
+            logger.debug("跳过非JAR/POM依赖: ${artifact.groupId}:${artifact.artifactId} (${artifact.packaging})")
             return false
         }
 
-        // 跳过测试依赖
-        if (artifact.scope == "test" || artifact.scope == "provided") {
+        // 跳过测试依赖（但POM类型的依赖不受scope限制）
+        if (artifact.packaging == "jar" && (artifact.scope == "test" || artifact.scope == "provided")) {
             logger.debug("跳过测试/提供依赖: ${artifact.groupId}:${artifact.artifactId} (${artifact.scope})")
             return false
         }
@@ -241,6 +244,53 @@ class MavenDependencyAnalyzer(private val project: Project) {
         return mavenProjects.any { mavenProject ->
             mavenProject.mavenId.groupId == artifact.groupId &&
             mavenProject.mavenId.artifactId == artifact.artifactId
+        }
+    }
+
+    /**
+     * 分析父POM
+     */
+    private fun analyzeParentPom(mavenProject: MavenProject, dependencies: MutableSet<DependencyInfo>) {
+        try {
+            // 获取父POM信息
+            val parentId = mavenProject.parentId
+            if (parentId != null) {
+                val groupId = parentId.groupId
+                val artifactId = parentId.artifactId
+                val version = parentId.version
+                
+                if (groupId != null && artifactId != null && version != null &&
+                    groupId.isNotBlank() && artifactId.isNotBlank() && version.isNotBlank()) {
+                    logger.info("发现父POM: $groupId:$artifactId:$version")
+                    
+                    // 构建父POM的本地路径
+                    val localRepoPath = getLocalMavenRepositoryPath()
+                    val parentPomPath = File(localRepoPath,
+                        "${groupId.replace('.', '/')}/$artifactId/$version/$artifactId-$version.pom")
+                    
+                    if (parentPomPath.exists() && parentPomPath.isFile) {
+                        val parentDependency = DependencyInfo(
+                            groupId = groupId,
+                            artifactId = artifactId,
+                            version = version,
+                            packaging = "pom",
+                            localPath = parentPomPath.absolutePath,
+                            checkStatus = CheckStatus.UNKNOWN,
+                            selected = false
+                        )
+                        dependencies.add(parentDependency)
+                        logger.info("添加父POM: ${parentDependency.getGAV()} (${parentPomPath.absolutePath})")
+                    } else {
+                        logger.warn("父POM文件不存在: ${parentPomPath.absolutePath}")
+                    }
+                } else {
+                    logger.debug("父POM信息不完整")
+                }
+            } else {
+                logger.debug("项目没有父POM")
+            }
+        } catch (e: Exception) {
+            logger.error("分析父POM时发生错误", e)
         }
     }
 
