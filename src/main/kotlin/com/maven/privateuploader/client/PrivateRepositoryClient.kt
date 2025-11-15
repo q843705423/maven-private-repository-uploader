@@ -2,6 +2,7 @@ package com.maven.privateuploader.client
 
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProgressIndicator
+import com.maven.privateuploader.analyzer.PomParser
 import com.maven.privateuploader.model.DependencyInfo
 import com.maven.privateuploader.model.RepositoryConfig
 import com.maven.privateuploader.model.CheckStatus
@@ -156,6 +157,24 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
      * @return 上传结果
      */
     fun uploadDependency(dependency: DependencyInfo, progressIndicator: ProgressIndicator?): UploadResult {
+        // 使用 Set 记录已上传的依赖，避免循环依赖和重复上传
+        val uploadedDependencies = mutableSetOf<String>()
+        return uploadDependencyRecursive(dependency, progressIndicator, uploadedDependencies)
+    }
+    
+    /**
+     * 递归上传依赖（包括父 POM 链和 BOM）
+     *
+     * @param dependency 依赖信息
+     * @param progressIndicator 进度指示器
+     * @param uploadedDependencies 已上传的依赖集合（用于避免循环依赖）
+     * @return 上传结果
+     */
+    private fun uploadDependencyRecursive(
+        dependency: DependencyInfo,
+        progressIndicator: ProgressIndicator?,
+        uploadedDependencies: MutableSet<String>
+    ): UploadResult {
         if (!config.isValid()) {
             logger.error("私仓配置无效，无法上传依赖")
             return UploadResult(false, "私仓配置无效")
@@ -172,16 +191,61 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
             return UploadResult(false, "依赖文件不存在: ${dependency.localPath}")
         }
 
+        // 生成依赖的唯一标识（GAV）
+        val dependencyKey = "${dependency.groupId}:${dependency.artifactId}:${dependency.version}"
+        
+        // 检查是否已经上传过（避免循环依赖和重复上传）
+        if (uploadedDependencies.contains(dependencyKey)) {
+            logger.debug("依赖 $dependencyKey 已上传，跳过")
+            return UploadResult(true, "已上传（跳过重复）")
+        }
+
         progressIndicator?.text2 = "上传依赖: ${dependency.getGAV()}"
 
         return try {
-            // 如果是POM类型的依赖（如父POM），只上传POM文件
+            // 如果是POM类型的依赖（如父POM、BOM），需要递归上传父 POM 和 BOM
             if (dependency.packaging == "pom") {
+                // 先递归上传父 POM 链和 BOM
+                val pomParser = PomParser()
+                val pomInfo = pomParser.parsePom(jarFile)
+                
+                if (pomInfo != null) {
+                    // 递归上传父 POM 链
+                    pomInfo.parent?.let { parent ->
+                        val parentDependency = pomParser.parentToDependencyInfo(parent)
+                        if (parentDependency != null) {
+                            logger.info("发现父 POM: ${parentDependency.getGAV()}，开始递归上传")
+                            val parentResult = uploadDependencyRecursive(parentDependency, progressIndicator, uploadedDependencies)
+                            if (!parentResult.success) {
+                                logger.warn("父 POM ${parentDependency.getGAV()} 上传失败: ${parentResult.message}")
+                                // 继续上传当前 POM，不因为父 POM 失败而中断
+                            }
+                        }
+                    }
+                    
+                    // 递归上传 BOM 依赖
+                    pomInfo.bomDependencies.forEach { bom ->
+                        val bomDependency = pomParser.bomToDependencyInfo(bom)
+                        if (bomDependency != null) {
+                            logger.info("发现 BOM 依赖: ${bomDependency.getGAV()}，开始递归上传")
+                            val bomResult = uploadDependencyRecursive(bomDependency, progressIndicator, uploadedDependencies)
+                            if (!bomResult.success) {
+                                logger.warn("BOM ${bomDependency.getGAV()} 上传失败: ${bomResult.message}")
+                                // 继续上传当前 POM，不因为 BOM 失败而中断
+                            }
+                        }
+                    }
+                }
+                
+                // 上传当前 POM 文件
                 val pomResult = uploadFile(dependency, jarFile, "pom")
                 if (!pomResult.success) {
                     return pomResult
                 }
-                logger.info("父POM ${dependency.getGAV()} 上传成功")
+                
+                // 标记为已上传
+                uploadedDependencies.add(dependencyKey)
+                logger.info("POM ${dependency.getGAV()} 上传成功")
                 return UploadResult(true, "上传成功")
             }
 
@@ -191,9 +255,40 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
                 return jarResult
             }
 
-            // 上传POM文件
+            // 上传POM文件（JAR 依赖的 POM）
             val pomFile = findPomFile(jarFile)
             if (pomFile != null && pomFile.exists()) {
+                // 解析 JAR 的 POM，递归上传父 POM 和 BOM
+                val pomParser = PomParser()
+                val pomInfo = pomParser.parsePom(pomFile)
+                
+                if (pomInfo != null) {
+                    // 递归上传父 POM 链
+                    pomInfo.parent?.let { parent ->
+                        val parentDependency = pomParser.parentToDependencyInfo(parent)
+                        if (parentDependency != null) {
+                            logger.info("发现父 POM: ${parentDependency.getGAV()}，开始递归上传")
+                            val parentResult = uploadDependencyRecursive(parentDependency, progressIndicator, uploadedDependencies)
+                            if (!parentResult.success) {
+                                logger.warn("父 POM ${parentDependency.getGAV()} 上传失败: ${parentResult.message}")
+                            }
+                        }
+                    }
+                    
+                    // 递归上传 BOM 依赖
+                    pomInfo.bomDependencies.forEach { bom ->
+                        val bomDependency = pomParser.bomToDependencyInfo(bom)
+                        if (bomDependency != null) {
+                            logger.info("发现 BOM 依赖: ${bomDependency.getGAV()}，开始递归上传")
+                            val bomResult = uploadDependencyRecursive(bomDependency, progressIndicator, uploadedDependencies)
+                            if (!bomResult.success) {
+                                logger.warn("BOM ${bomDependency.getGAV()} 上传失败: ${bomResult.message}")
+                            }
+                        }
+                    }
+                }
+                
+                // 上传当前 POM 文件
                 val pomResult = uploadFile(dependency, pomFile, "pom")
                 if (!pomResult.success) {
                     return pomResult
@@ -206,6 +301,8 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
                 uploadFile(dependency, sourcesFile, "jar", "sources")
             }
 
+            // 标记为已上传
+            uploadedDependencies.add(dependencyKey)
             logger.info("依赖 ${dependency.getGAV()} 上传成功")
             UploadResult(true, "上传成功")
 
