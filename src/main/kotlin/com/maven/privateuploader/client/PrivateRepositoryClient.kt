@@ -63,6 +63,8 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
     fun checkDependencyExists(dependency: DependencyInfo): Boolean {
         if (!config.isValid()) {
             logger.error("私仓配置无效，无法检查依赖存在性")
+            dependency.checkStatus = CheckStatus.ERROR
+            dependency.errorMessage = "私仓配置无效"
             return false
         }
 
@@ -79,15 +81,24 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
             val exists = response.isSuccessful
 
             logger.debug("依赖 ${dependency.getGAV()} 是否存在: $exists (HTTP ${response.code})")
+            
+            // 如果失败，记录错误信息
+            if (!exists && response.code != 404) {
+                dependency.errorMessage = "HTTP ${response.code}: ${response.message}"
+            } else {
+                dependency.errorMessage = ""
+            }
+            
             exists
         } catch (e: Exception) {
             logger.error("检查依赖 ${dependency.getGAV()} 存在性时发生错误", e)
+            dependency.errorMessage = e.message ?: "检查异常: ${e.javaClass.simpleName}"
             false
         }
     }
 
     /**
-     * 批量检查依赖是否存在
+     * 批量检查依赖是否存在（同步版本，用于兼容）
      *
      * @param dependencies 依赖列表
      * @param progressIndicator 进度指示器
@@ -95,7 +106,10 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
     fun checkDependenciesExist(dependencies: List<DependencyInfo>, progressIndicator: ProgressIndicator?) {
         if (!config.isValid()) {
             logger.error("私仓配置无效，无法批量检查依赖存在性")
-            dependencies.forEach { it.checkStatus = CheckStatus.ERROR }
+            dependencies.forEach { 
+                it.checkStatus = CheckStatus.ERROR
+                it.errorMessage = "私仓配置无效"
+            }
             return
         }
 
@@ -112,7 +126,7 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
                 dependency.existsInPrivateRepo = exists
                 dependency.checkStatus = if (exists) CheckStatus.EXISTS else CheckStatus.MISSING
                 dependency.selected = !exists // 默认选择缺失的依赖
-                dependency.errorMessage = ""
+                // errorMessage已在checkDependencyExists中设置
 
             } catch (e: Exception) {
                 logger.error("检查依赖 ${dependency.getGAV()} 存在性时发生错误", e)
@@ -186,7 +200,11 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
 
         } catch (e: Exception) {
             logger.error("上传依赖 ${dependency.getGAV()} 时发生错误", e)
-            UploadResult(false, "上传失败: ${e.message}")
+            val errorMsg = e.message ?: "上传异常: ${e.javaClass.simpleName}"
+            // 写回错误信息到dependency
+            dependency.errorMessage = errorMsg
+            dependency.checkStatus = CheckStatus.ERROR
+            UploadResult(false, errorMsg)
         }
     }
 

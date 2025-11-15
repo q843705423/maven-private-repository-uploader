@@ -9,8 +9,11 @@ import com.intellij.openapi.project.Project
 import com.maven.privateuploader.analyzer.MavenDependencyAnalyzer
 import com.maven.privateuploader.client.PrivateRepositoryClient
 import com.maven.privateuploader.client.UploadResult
+import com.maven.privateuploader.model.CheckStatus
 import com.maven.privateuploader.model.DependencyInfo
 import com.maven.privateuploader.model.RepositoryConfig
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * 依赖上传服务
@@ -20,6 +23,12 @@ import com.maven.privateuploader.model.RepositoryConfig
 class DependencyUploadService {
 
     private val logger = thisLogger()
+    
+    // 独立的线程池：HEAD检查使用10个线程
+    private val checkExecutor: ExecutorService = Executors.newFixedThreadPool(10)
+    
+    // 独立的线程池：上传使用3个线程
+    private val uploadExecutor: ExecutorService = Executors.newFixedThreadPool(3)
 
     /**
      * 执行完整的依赖分析、预检查和上传流程
@@ -75,11 +84,11 @@ class DependencyUploadService {
     }
 
     /**
-     * 上传选中的依赖
+     * 上传选中的依赖（使用独立线程池）
      *
      * @param project 当前项目
      * @param config 私仓配置
-     * @param dependencies 依赖列表
+     * @param dependencies 依赖列表（从tableModel读取）
      * @param selectedDependencies 要上传的依赖
      * @param onProgress 进度回调
      * @param onComplete 完成回调
@@ -108,36 +117,65 @@ class DependencyUploadService {
                 )
 
                 indicator.isIndeterminate = false
-                val failedUploads = mutableListOf<DependencyInfo>()
+                val failedUploads = java.util.Collections.synchronizedList(mutableListOf<DependencyInfo>())
+                val completedCount = java.util.concurrent.atomic.AtomicInteger(0)
+                val successCount = java.util.concurrent.atomic.AtomicInteger(0)
+                val failureCount = java.util.concurrent.atomic.AtomicInteger(0)
 
-                selectedDependencies.forEachIndexed { index, dependency ->
-                    indicator.fraction = index.toDouble() / selectedDependencies.size.toDouble()
-                    indicator.text = "上传Maven依赖"
-                    indicator.text2 = "正在上传: ${dependency.getGAV()}"
+                // 使用上传线程池并行上传
+                val futures = selectedDependencies.mapIndexed { index, dependency ->
+                    uploadExecutor.submit(java.lang.Runnable {
+                        try {
+                            // 注意：ProgressIndicator在多线程环境下需要同步访问
+                            synchronized(indicator) {
+                                indicator.text2 = "正在上传: ${dependency.getGAV()}"
+                            }
+                            
+                            val result = client.uploadDependency(dependency, null) // 不传递indicator，避免线程安全问题
+                            
+                            val current = completedCount.incrementAndGet()
+                            synchronized(indicator) {
+                                indicator.fraction = current.toDouble() / selectedDependencies.size.toDouble()
+                                indicator.text2 = "正在上传: ${dependency.getGAV()} ($current/${selectedDependencies.size})"
+                            }
+                            
+                            onProgress(dependency.getGAV(), current, selectedDependencies.size)
 
-                    onProgress(dependency.getGAV(), index + 1, selectedDependencies.size)
-
-                    try {
-                        val result = client.uploadDependency(dependency, indicator)
-                        if (result.success) {
-                            uploadSummary.successCount++
-                            logger.info("依赖上传成功: ${dependency.getGAV()}")
-                        } else {
-                            uploadSummary.failureCount++
+                            if (result.success) {
+                                successCount.incrementAndGet()
+                                logger.info("依赖上传成功: ${dependency.getGAV()}")
+                                // 清除错误信息
+                                dependency.errorMessage = ""
+                            } else {
+                                failureCount.incrementAndGet()
+                                failedUploads.add(dependency)
+                                // 写回错误信息
+                                dependency.errorMessage = result.message
+                                dependency.checkStatus = CheckStatus.ERROR
+                                logger.error("依赖上传失败: ${dependency.getGAV()} - ${result.message}")
+                            }
+                        } catch (e: Exception) {
+                            val current = completedCount.incrementAndGet()
+                            failureCount.incrementAndGet()
                             failedUploads.add(dependency)
-                            logger.error("依赖上传失败: ${dependency.getGAV()} - ${result.message}")
+                            // 写回错误信息
+                            dependency.errorMessage = e.message ?: "上传异常: ${e.javaClass.simpleName}"
+                            dependency.checkStatus = CheckStatus.ERROR
+                            logger.error("上传依赖时发生异常: ${dependency.getGAV()}", e)
                         }
-                    } catch (e: Exception) {
-                        uploadSummary.failureCount++
-                        failedUploads.add(dependency)
-                        logger.error("上传依赖时发生异常: ${dependency.getGAV()}", e)
-                    }
+                    })
                 }
+
+                // 等待所有任务完成
+                futures.forEach { it.get() }
 
                 indicator.fraction = 1.0
                 indicator.text2 = "上传完成"
 
-                uploadSummary.failedUploads = failedUploads
+                // 更新汇总信息
+                uploadSummary.successCount = successCount.get()
+                uploadSummary.failureCount = failureCount.get()
+                uploadSummary.failedUploads = failedUploads.toList()
 
                 // 在EDT线程中调用完成回调
                 com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {

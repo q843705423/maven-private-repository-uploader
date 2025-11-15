@@ -39,6 +39,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private lateinit var projectInfoLabel: JBLabel
     private lateinit var checkAllButton: JButton
     private lateinit var uncheckAllButton: JButton
+    private lateinit var scanButton: JButton
     private lateinit var refreshButton: JButton
     private lateinit var configButton: JButton
     private lateinit var uploadButton: JButton
@@ -52,9 +53,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         setOKButtonText("关闭")
         init()
         
-        // 提前开始初始化依赖分析
-        SwingUtilities.invokeLater {
-            initializeDependencies()
+        // Dialog打开时只扫描依赖，不检查私仓
+        SwingUtilities.invokeLater { 
+            scanDependenciesOnly() 
         }
     }
 
@@ -112,19 +113,22 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     }
 
     private fun createToolbarPanel(): JPanel {
-        checkAllButton = JButton("全选")
+        checkAllButton = JButton("全部勾选")
         checkAllButton.addActionListener { selectAllDependencies(true) }
 
-        uncheckAllButton = JButton("全不选")
+        uncheckAllButton = JButton("全部取消")
         uncheckAllButton.addActionListener { selectAllDependencies(false) }
 
-        refreshButton = JButton("重新检查")
-        refreshButton.addActionListener { refreshDependencies() }
+        scanButton = JButton("重新扫描依赖")
+        scanButton.addActionListener { rescanDependencies() }
 
-        configButton = JButton("配置")
+        refreshButton = JButton("重新检查私仓")
+        refreshButton.addActionListener { recheckRepositoryStatus() }
+
+        configButton = JButton("私仓设置")
         configButton.addActionListener { openSettings() }
 
-        uploadButton = JButton("上传选中依赖")
+        uploadButton = JButton("上传到私仓")
         uploadButton.addActionListener { uploadSelectedDependencies() }
 
         // 使用 BoxLayout 替代 FlowLayout + Glue 的组合
@@ -135,6 +139,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         toolbarPanel.add(checkAllButton)
         toolbarPanel.add(Box.createHorizontalStrut(10))
         toolbarPanel.add(uncheckAllButton)
+        toolbarPanel.add(Box.createHorizontalStrut(10))
+        toolbarPanel.add(scanButton)
         toolbarPanel.add(Box.createHorizontalStrut(10))
         toolbarPanel.add(refreshButton)
         toolbarPanel.add(Box.createHorizontalStrut(10))
@@ -172,14 +178,27 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         statusLabel.border = JBUI.Borders.empty(5, 0, 0, 0)
     }
 
+    /**
+     * 统一管理按钮启用/禁用状态
+     */
+    private fun setButtonsEnabled(enabled: Boolean) {
+        checkAllButton.isEnabled = enabled
+        uncheckAllButton.isEnabled = enabled
+        scanButton.isEnabled = enabled
+        refreshButton.isEnabled = enabled
+        configButton.isEnabled = enabled
+        uploadButton.isEnabled = enabled
+    }
+
     override fun getPreferredFocusedComponent(): JComponent {
         return dependencyTable
     }
 
     /**
-     * 初始化依赖分析
+     * 仅扫描依赖（不检查私仓）
+     * @param autoCheckAfterScan 扫描完成后是否自动检查私仓
      */
-    private fun initializeDependencies() {
+    private fun scanDependenciesOnly(autoCheckAfterScan: Boolean = false) {
         if (!uploadService.isMavenProject(project)) {
             Messages.showErrorDialog(
                 project,
@@ -193,43 +212,95 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         val projectInfo = uploadService.getMavenProjectInfo(project)
         projectInfoLabel.text = projectInfo
 
-        // 检查配置
+        // 加载配置（但不检查）
         config = PrivateRepoConfigurable.getConfig()
-        var configComplete = true
 
-        val currentConfig = config
-        if (currentConfig == null || !currentConfig.enabled) {
-            updateStatus("私仓上传功能未启用，仅显示依赖列表")
-            configComplete = false
-        } else if (!currentConfig.isValid()) {
-            updateStatus("私仓配置不完整，仅显示依赖列表")
-            configComplete = false
-        }
+        updateStatus("正在扫描 Maven 依赖…")
+        setButtonsEnabled(false)
 
-        // 如果配置完整，进行完整的分析流程（包括私仓检查）
-        if (configComplete && currentConfig != null) {
-            // 开始完整的上传流程（包括私仓检查）
-            uploadService.executeUploadFlow(
-                project,
-                currentConfig,
-                onAnalysisComplete = { deps ->
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "扫描Maven依赖", true) {
+            override fun run(indicator: ProgressIndicator) {
+                try {
+                    indicator.isIndeterminate = true
+                    indicator.text = "正在扫描 Maven 依赖…"
+                    
+                    val analyzer = com.maven.privateuploader.analyzer.MavenDependencyAnalyzer(project)
+                    val deps = analyzer.analyzeDependencies(indicator)
+
                     ApplicationManager.getApplication().invokeLater {
-                        updateTableData(deps, "分析完成，共发现 ${deps.size} 个依赖")
+                        updateTableData(deps, "扫描完成，共发现 ${deps.size} 个依赖")
+                        setButtonsEnabled(true)
+                        
+                        // 如果配置完整且需要自动检查，则自动检查私仓
+                        if (autoCheckAfterScan) {
+                            val currentConfig = config
+                            if (currentConfig != null && currentConfig.enabled && currentConfig.isValid()) {
+                                checkRepositoryStatus()
+                            }
+                        }
                     }
-                },
-                onCheckComplete = { deps ->
+                } catch (e: Exception) {
+                    logger.error("依赖扫描时发生错误", e)
                     ApplicationManager.getApplication().invokeLater {
-                        val missingCount = deps.count { it.checkStatus == CheckStatus.MISSING }
-                        val existsCount = deps.count { it.checkStatus == CheckStatus.EXISTS }
-                        val errorCount = deps.count { it.checkStatus == CheckStatus.ERROR }
-                        updateTableData(deps, "检查完成: 缺失=$missingCount, 已存在=$existsCount, 错误=$errorCount")
+                        updateStatus("依赖扫描失败: ${e.message}")
+                        setButtonsEnabled(true)
                     }
                 }
+            }
+        })
+    }
+
+    /**
+     * 检查私仓状态
+     */
+    private fun checkRepositoryStatus() {
+        if (dependencies.isEmpty()) {
+            Messages.showInfoMessage(
+                project,
+                "没有发现依赖，无法检查私仓状态",
+                "提示"
             )
-        } else {
-            // 配置不完整时，仅进行依赖分析（不依赖私仓配置）
-            analyzeDependenciesOnly()
+            return
         }
+
+        val currentConfig = config
+        if (currentConfig == null || !currentConfig.enabled || !currentConfig.isValid()) {
+            Messages.showWarningDialog(
+                project,
+                "私仓配置不完整，无法检查依赖状态",
+                "配置错误"
+            )
+            return
+        }
+
+        updateStatus("正在检查私仓依赖状态…")
+        setButtonsEnabled(false)
+
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "检查私仓依赖状态", true) {
+            override fun run(indicator: ProgressIndicator) {
+                try {
+                    indicator.isIndeterminate = true
+                    indicator.text = "正在检查私仓依赖状态…"
+                    
+                    val client = PrivateRepositoryClient(currentConfig)
+                    client.checkDependenciesExist(dependencies.toMutableList(), indicator)
+                    
+                    ApplicationManager.getApplication().invokeLater {
+                        val missingCount = dependencies.count { it.checkStatus == CheckStatus.MISSING }
+                        val existsCount = dependencies.count { it.checkStatus == CheckStatus.EXISTS }
+                        val errorCount = dependencies.count { it.checkStatus == CheckStatus.ERROR }
+                        updateTableData(dependencies, "私仓检查完成：缺失 $missingCount 个，已存在 $existsCount 个")
+                        setButtonsEnabled(true)
+                    }
+                } catch (e: Exception) {
+                    logger.error("检查私仓依赖状态时发生错误", e)
+                    ApplicationManager.getApplication().invokeLater {
+                        updateStatus("私仓检查失败: ${e.message}")
+                        setButtonsEnabled(true)
+                    }
+                }
+            }
+        })
     }
 
     /**
@@ -250,32 +321,17 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     }
 
     /**
-     * 仅进行依赖分析（不依赖私仓配置）
+     * 重新扫描依赖
      */
-    private fun analyzeDependenciesOnly() {
-        updateStatus("正在分析依赖...")
+    private fun rescanDependencies() {
+        scanDependenciesOnly()
+    }
 
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "分析Maven依赖", true) {
-            override fun run(indicator: ProgressIndicator) {
-                try {
-                    // 创建分析器并分析依赖
-                    val analyzer = com.maven.privateuploader.analyzer.MavenDependencyAnalyzer(project)
-                    val deps = analyzer.analyzeDependencies(indicator)
-
-                    // 在EDT线程中更新UI
-                    logger.info("准备更新UI，依赖数量: ${deps.size}")
-                    ApplicationManager.getApplication().invokeLater {
-                        updateTableData(deps, "分析完成，共发现 ${deps.size} 个依赖（私仓检查已跳过）")
-                    }
-
-                } catch (e: Exception) {
-                    logger.error("依赖分析时发生错误", e)
-                    ApplicationManager.getApplication().invokeLater {
-                        updateStatus("依赖分析失败: ${e.message}")
-                    }
-                }
-            }
-        })
+    /**
+     * 重新检查私仓状态
+     */
+    private fun recheckRepositoryStatus() {
+        checkRepositoryStatus()
     }
 
     /**
@@ -285,58 +341,6 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         tableModel.setAllSelected(selected)
     }
 
-    /**
-     * 重新检查依赖状态
-     */
-    private fun refreshDependencies() {
-        if (dependencies.isEmpty()) {
-            Messages.showInfoMessage(
-                project,
-                "没有发现依赖，无法重新检查",
-                "提示"
-            )
-            return
-        }
-
-        val currentConfig = config
-        if (currentConfig == null || !currentConfig.isValid()) {
-            Messages.showWarningDialog(
-                project,
-                "私仓配置不完整，无法重新检查依赖状态",
-                "配置错误"
-            )
-            return
-        }
-
-        updateStatus("正在重新检查依赖状态...")
-
-        // 使用 Task.Backgroundable 替代裸线程
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "重新检查依赖状态", true) {
-            override fun run(indicator: ProgressIndicator) {
-                try {
-                    indicator.isIndeterminate = true
-                    indicator.text = "正在检查依赖状态..."
-                    
-                    val client = PrivateRepositoryClient(currentConfig)
-                    client.checkDependenciesExist(dependencies.toMutableList(), indicator)
-                    
-                    ApplicationManager.getApplication().invokeLater {
-                        updateTableData(dependencies, "重新检查完成")
-                    }
-                } catch (e: Exception) {
-                    logger.error("重新检查依赖状态时发生错误", e)
-                    ApplicationManager.getApplication().invokeLater {
-                        updateStatus("重新检查失败: ${e.message}")
-                        Messages.showErrorDialog(
-                            project,
-                            "重新检查依赖状态时发生错误: ${e.message}",
-                            "检查失败"
-                        )
-                    }
-                }
-            }
-        })
-    }
 
     /**
      * 打开设置页面
@@ -351,28 +355,14 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
     /**
      * 配置变更后的重新初始化流程
+     * 统一流程：重新扫描依赖 → 重新检查私仓
      */
     private fun reinitializeAfterConfigChange() {
-        val currentConfig = config
-        if (currentConfig == null || !currentConfig.enabled || !currentConfig.isValid()) {
-            // 配置无效时，如果已有依赖数据，仅重新检查状态
-            if (dependencies.isNotEmpty()) {
-                // 如果之前有依赖数据，重新分析但不检查私仓
-                analyzeDependenciesOnly()
-            } else {
-                // 如果没有依赖数据，重新初始化
-                initializeDependencies()
-            }
-        } else {
-            // 配置有效时，重新执行完整的分析流程（包括私仓检查）
-            if (dependencies.isEmpty()) {
-                // 如果没有依赖数据，重新初始化
-                initializeDependencies()
-            } else {
-                // 如果有依赖数据，重新检查状态
-                refreshDependencies()
-            }
-        }
+        // 重新加载配置
+        config = PrivateRepoConfigurable.getConfig()
+        
+        // 统一流程：扫描完成后自动检查
+        scanDependenciesOnly(autoCheckAfterScan = true)
     }
 
     /**
@@ -413,6 +403,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
             return
         }
 
+        updateStatus("正在上传依赖（0/${selectedDependencies.size}）…")
+        setButtonsEnabled(false)
+
         // 显示进度对话框
         val progressDialog = UploadProgressDialog(this, selectedDependencies)
         progressDialog.show()
@@ -420,21 +413,28 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         uploadService.uploadSelectedDependencies(
             project,
             currentConfig,
-            dependencies,
+            tableModel.getDependencies(), // 从tableModel读取，不使用旧引用
             selectedDependencies,
             onProgress = { current, currentCount, totalCount ->
-                progressDialog.updateProgress(current, currentCount, totalCount)
+                SwingUtilities.invokeLater {
+                    updateStatus("正在上传依赖（$currentCount/$totalCount）…")
+                    progressDialog.updateProgress(current, currentCount, totalCount)
+                }
             },
             onComplete = { summary ->
                 SwingUtilities.invokeLater {
                     progressDialog.closeDialog(summary)
                     if (summary.hasFailures()) {
                         showUploadResult(summary, true)
+                        updateStatus("上传完成，可查看结果")
                     } else {
                         showUploadResult(summary, false)
-                        // 重新检查依赖状态
-                        refreshDependencies()
+                        updateStatus("上传完成，可查看结果")
                     }
+                    setButtonsEnabled(true)
+                    
+                    // 上传完成后必须重新扫描 + 重新检查
+                    scanDependenciesOnly(autoCheckAfterScan = true)
                 }
             }
         )
@@ -476,7 +476,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     }
 
     /**
-     * 更新状态栏
+     * 更新状态栏（标准化文案）
      */
     private fun updateStatus(message: String) {
         statusLabel.text = message
