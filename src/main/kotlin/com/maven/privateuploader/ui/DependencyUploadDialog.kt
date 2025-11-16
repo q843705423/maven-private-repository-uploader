@@ -475,6 +475,21 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         DependencyTableColumn.allColumns.forEachIndexed { index, column ->
             columnModel.getColumn(index).preferredWidth = column.preferredWidth
         }
+        
+        // 添加双击事件监听器，显示错误详情
+        dependencyTable.addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                if (e.clickCount == 2) {
+                    val row = dependencyTable.rowAtPoint(e.point)
+                    if (row >= 0) {
+                        val dependency = tableModel.getDependencyAt(row)
+                        if (dependency != null && dependency.checkStatus == CheckStatus.ERROR) {
+                            showErrorDetailDialog(dependency)
+                        }
+                    }
+                }
+            }
+        })
     }
 
     private fun createStatusBar() {
@@ -861,12 +876,16 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
         // 显示进度对话框
         val progressDialog = UploadProgressDialog(this, selectedDependencies)
+        @Suppress("DEPRECATION")
         progressDialog.show()
 
+        // 保存当前依赖列表的引用，用于上传完成后更新
+        val currentDependencies = tableModel.getDependencies()
+        
         uploadService.uploadSelectedDependencies(
             project,
             currentConfig,
-            tableModel.getDependencies(), // 从tableModel读取，不使用旧引用
+            currentDependencies, // 从tableModel读取，不使用旧引用
             selectedDependencies,
             onProgress = { current, currentCount, totalCount ->
                 SwingUtilities.invokeLater {
@@ -886,8 +905,10 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                     }
                     setButtonsEnabled(true)
                     
-                    // 上传完成后必须重新扫描 + 重新检查
-                    scanDependenciesOnly(autoCheckAfterScan = true)
+                    // 上传完成后，更新表格数据以反映上传结果（保留错误信息）
+                    // 不重新扫描，避免覆盖错误信息
+                    // 使用传入上传服务的 currentDependencies，因为上传服务直接修改了这些对象的状态
+                    updateTableData(currentDependencies, "上传完成，共 ${summary.totalCount} 个，成功 ${summary.successCount} 个，失败 ${summary.failureCount} 个")
                 }
             }
         )
@@ -933,5 +954,14 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
      */
     private fun updateStatus(message: String) {
         statusLabel.text = message
+    }
+    
+    /**
+     * 显示错误详情对话框
+     */
+    private fun showErrorDetailDialog(dependency: DependencyInfo) {
+        val dialog = ErrorDetailDialog(project, dependency)
+        @Suppress("DEPRECATION")
+        dialog.show()
     }
 }

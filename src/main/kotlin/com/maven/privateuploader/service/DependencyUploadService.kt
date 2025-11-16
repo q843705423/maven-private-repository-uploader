@@ -144,8 +144,11 @@ class DependencyUploadService {
                             if (result.success) {
                                 successCount.incrementAndGet()
                                 logger.info("依赖上传成功: ${dependency.getGAV()}")
-                                // 清除错误信息
+                                // 清除错误信息，设置状态为 EXISTS
                                 dependency.errorMessage = ""
+                                dependency.stackTrace = ""
+                                dependency.checkStatus = CheckStatus.EXISTS
+                                dependency.existsInPrivateRepo = true
                             } else {
                                 failureCount.incrementAndGet()
                                 failedUploads.add(dependency)
@@ -158,6 +161,14 @@ class DependencyUploadService {
                             val current = completedCount.incrementAndGet()
                             failureCount.incrementAndGet()
                             failedUploads.add(dependency)
+                            // 保存堆栈信息
+                            val stackTrace = java.io.StringWriter().use { sw ->
+                                java.io.PrintWriter(sw).use { pw ->
+                                    e.printStackTrace(pw)
+                                    sw.toString()
+                                }
+                            }
+                            dependency.stackTrace = stackTrace
                             // 写回错误信息
                             dependency.errorMessage = e.message ?: "上传异常: ${e.javaClass.simpleName}"
                             dependency.checkStatus = CheckStatus.ERROR

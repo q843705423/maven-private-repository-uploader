@@ -40,6 +40,19 @@ enum class DependencyTableColumn(
     ),
 
     /**
+     * 错误信息列
+     * 显示上传或检查失败时的错误信息
+     */
+    ERROR_MESSAGE(
+        displayName = "错误信息",
+        columnClass = String::class.java,
+        preferredWidth = 300,
+        editable = false,
+        valueExtractor = { it.errorMessage },
+        defaultValue = ""
+    ),
+
+    /**
      * 本地路径列
      * 返回预期路径（即使文件不存在也会返回预期路径，便于在UI中显示）
      */

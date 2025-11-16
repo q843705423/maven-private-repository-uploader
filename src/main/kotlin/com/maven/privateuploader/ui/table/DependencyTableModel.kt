@@ -260,9 +260,34 @@ class DependencyTableModel : AbstractTableModel() {
                                 CheckStatus.EXISTS -> "该依赖已存在于私仓中，无需上传"
                                 CheckStatus.MISSING -> "该依赖在私仓中缺失，需要上传到私仓"
                                 CheckStatus.CHECKING -> "正在检查该依赖在私仓中的状态..."
-                                CheckStatus.ERROR -> "检查私仓状态时出错: ${dependency.errorMessage.ifEmpty { "未知错误" }}"
+                                CheckStatus.ERROR -> {
+                                    val errorInfo = StringBuilder()
+                                    errorInfo.append("上传失败: ${dependency.errorMessage.ifEmpty { "未知错误" }}")
+                                    if (dependency.uploadUrl.isNotEmpty()) {
+                                        errorInfo.append("\n\n调用地址: ${dependency.uploadUrl}")
+                                    }
+                                    if (dependency.stackTrace.isNotEmpty()) {
+                                        errorInfo.append("\n\n堆栈信息:\n${dependency.stackTrace.take(500)}${if (dependency.stackTrace.length > 500) "\n..." else ""}")
+                                    }
+                                    errorInfo.append("\n\n提示: 双击此行可查看详细错误信息并复制")
+                                    errorInfo.toString()
+                                }
                                 CheckStatus.UNKNOWN -> "尚未检查该依赖在私仓中的状态，请点击'重新检查私仓'按钮"
                             }
+                        }
+                        DependencyTableColumn.ERROR_MESSAGE -> {
+                            if (dependency.checkStatus == CheckStatus.ERROR && dependency.errorMessage.isNotEmpty()) {
+                                val errorInfo = StringBuilder()
+                                errorInfo.append("错误信息: ${dependency.errorMessage}")
+                                if (dependency.uploadUrl.isNotEmpty()) {
+                                    errorInfo.append("\n\n调用地址: ${dependency.uploadUrl}")
+                                }
+                                if (dependency.stackTrace.isNotEmpty()) {
+                                    errorInfo.append("\n\n堆栈信息:\n${dependency.stackTrace.take(500)}${if (dependency.stackTrace.length > 500) "\n..." else ""}")
+                                }
+                                errorInfo.append("\n\n提示: 双击此行可查看详细错误信息并复制")
+                                errorInfo.toString()
+                            } else null
                         }
                         DependencyTableColumn.LOCAL_PATH -> {
                             if (dependency.isLocalFileExists()) {
@@ -271,7 +296,12 @@ class DependencyTableModel : AbstractTableModel() {
                                 "本地文件不存在！\n这是预期的本地仓库路径（根据Maven规范计算）\n实际文件可能已被删除或尚未下载"
                             }
                         }
-                        else -> null
+                        else -> {
+                            // 对于错误行，其他列也显示错误信息
+                            if (dependency.checkStatus == CheckStatus.ERROR && dependency.errorMessage.isNotEmpty()) {
+                                "错误: ${dependency.errorMessage}\n双击查看详细信息"
+                            } else null
+                        }
                     }
                 }
             }
@@ -291,6 +321,11 @@ class DependencyTableModel : AbstractTableModel() {
                     tableColumn.cellRenderer = StatusCellRenderer()
                 }
                 
+                // 设置错误信息列的渲染器
+                if (column == DependencyTableColumn.ERROR_MESSAGE) {
+                    tableColumn.cellRenderer = ErrorMessageCellRenderer()
+                }
+                
                 // 设置本地路径列的渲染器
                 if (column == DependencyTableColumn.LOCAL_PATH) {
                     tableColumn.cellRenderer = LocalPathCellRenderer()
@@ -303,6 +338,7 @@ class DependencyTableModel : AbstractTableModel() {
                 val tableColumn = table.columnModel.getColumn(index)
                 // 如果该列没有设置特殊渲染器，则使用行颜色渲染器
                 if (column != DependencyTableColumn.STATUS && 
+                    column != DependencyTableColumn.ERROR_MESSAGE &&
                     column != DependencyTableColumn.LOCAL_PATH &&
                     column != DependencyTableColumn.SELECTED) {
                     tableColumn.cellRenderer = RowColorRenderer()
@@ -332,6 +368,15 @@ class DependencyTableModel : AbstractTableModel() {
         ) {
             val model = table.model as? DependencyTableModel
             val dependency = model?.getDependencyAt(row)
+            
+            // 设置失败行的背景色
+            if (dependency != null && dependency.checkStatus == CheckStatus.ERROR && !selected) {
+                background = java.awt.Color(255, 240, 240) // 浅红色背景
+            } else if (selected) {
+                background = null
+            } else {
+                background = null
+            }
             
             if (value is CheckStatus) {
                 when (value) {
@@ -364,8 +409,45 @@ class DependencyTableModel : AbstractTableModel() {
     }
     
     /**
+     * 错误信息列的渲染器
+     * 显示错误信息，失败时显示红色，成功时为空
+     */
+    private class ErrorMessageCellRenderer : ColoredTableCellRenderer() {
+        
+        override fun customizeCellRenderer(
+            table: JTable,
+            value: Any?,
+            selected: Boolean,
+            hasFocus: Boolean,
+            row: Int,
+            column: Int
+        ) {
+            val model = table.model as? DependencyTableModel
+            val dependency = model?.getDependencyAt(row)
+            
+            // 设置失败行的背景色
+            if (dependency != null && dependency.checkStatus == CheckStatus.ERROR && !selected) {
+                background = java.awt.Color(255, 240, 240) // 浅红色背景
+            } else if (selected) {
+                background = null
+            } else {
+                background = null
+            }
+            
+            val errorMessage = value?.toString() ?: ""
+            if (errorMessage.isNotEmpty()) {
+                // 显示错误信息，使用红色文字
+                append(errorMessage, SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.RED))
+            } else {
+                // 没有错误时显示为空
+                append("", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+            }
+        }
+    }
+    
+    /**
      * 行颜色渲染器
-     * 根据依赖状态为整行设置文字颜色
+     * 根据依赖状态为整行设置文字颜色和背景色
      */
     private class RowColorRenderer : ColoredTableCellRenderer() {
         
@@ -385,6 +467,16 @@ class DependencyTableModel : AbstractTableModel() {
                 val isMissing = dependency.checkStatus == CheckStatus.MISSING || !dependency.isLocalFileExists()
                 val isError = dependency.checkStatus == CheckStatus.ERROR
                 val isExists = dependency.checkStatus == CheckStatus.EXISTS
+                
+                // 设置背景色（失败行高亮）
+                if (isError && !selected) {
+                    background = java.awt.Color(255, 240, 240) // 浅红色背景
+                } else if (selected) {
+                    // 选中时使用默认选中背景色
+                    background = null
+                } else {
+                    background = null
+                }
                 
                 val textColor = when {
                     isError -> java.awt.Color.RED

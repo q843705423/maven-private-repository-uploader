@@ -22,7 +22,9 @@ data class DependencyInfo(
     var existsInPrivateRepo: Boolean = false,
     var checkStatus: CheckStatus = CheckStatus.UNKNOWN,
     var selected: Boolean = false,
-    var errorMessage: String = ""
+    var errorMessage: String = "",
+    var stackTrace: String = "",
+    var uploadUrl: String = ""
 ) {
     /**
      * 获取GAV坐标字符串

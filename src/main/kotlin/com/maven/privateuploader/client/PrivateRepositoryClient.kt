@@ -126,8 +126,14 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
             try {
                 val exists = checkDependencyExists(dependency)
                 dependency.existsInPrivateRepo = exists
-                dependency.checkStatus = if (exists) CheckStatus.EXISTS else CheckStatus.MISSING
-                dependency.selected = !exists // 默认选择缺失的依赖
+                // 如果 checkDependencyExists 设置了 errorMessage，说明检查时出现了错误，应该设置为 ERROR 状态
+                if (dependency.errorMessage.isNotEmpty()) {
+                    dependency.checkStatus = CheckStatus.ERROR
+                    dependency.selected = false
+                } else {
+                    dependency.checkStatus = if (exists) CheckStatus.EXISTS else CheckStatus.MISSING
+                    dependency.selected = !exists // 默认选择缺失的依赖
+                }
                 // errorMessage已在checkDependencyExists中设置
 
             } catch (e: Exception) {
@@ -317,6 +323,23 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
         } catch (e: Exception) {
             logger.error("上传依赖 ${dependency.getGAV()} 时发生错误", e)
             val errorMsg = e.message ?: "上传异常: ${e.javaClass.simpleName}"
+            // 保存堆栈信息
+            val stackTrace = java.io.StringWriter().use { sw ->
+                java.io.PrintWriter(sw).use { pw ->
+                    e.printStackTrace(pw)
+                    sw.toString()
+                }
+            }
+            dependency.stackTrace = stackTrace
+            // 保存上传URL（如果还没有保存）
+            if (dependency.uploadUrl.isEmpty()) {
+                try {
+                    val url = buildDependencyUrl(dependency)
+                    dependency.uploadUrl = url
+                } catch (ex: Exception) {
+                    logger.warn("无法构建上传URL: ${ex.message}")
+                }
+            }
             // 写回错误信息到dependency
             dependency.errorMessage = errorMsg
             dependency.checkStatus = CheckStatus.ERROR
@@ -333,9 +356,15 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
         extension: String,
         classifier: String? = null
     ): UploadResult {
+        var uploadUrl = ""
         try {
-            val url = buildFileUrl(dependency, extension, classifier)
-            logger.debug("上传文件: $file -> $url")
+            uploadUrl = buildFileUrl(dependency, extension, classifier)
+            logger.debug("上传文件: $file -> $uploadUrl")
+            
+            // 保存上传URL到依赖信息
+            if (dependency.uploadUrl.isEmpty()) {
+                dependency.uploadUrl = uploadUrl
+            }
 
             val mediaType = when (extension) {
                 "jar" -> "application/java-archive".toMediaType()
@@ -345,7 +374,7 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
 
             val requestBody = file.source().buffer().readByteArray().toRequestBody(mediaType)
             val request = Request.Builder()
-                .url(url)
+                .url(uploadUrl)
                 .put(requestBody)
                 .build()
 
@@ -363,6 +392,17 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
 
         } catch (e: Exception) {
             logger.error("上传文件时发生错误: ${file.absolutePath}", e)
+            // 保存堆栈信息
+            val stackTrace = java.io.StringWriter().use { sw ->
+                java.io.PrintWriter(sw).use { pw ->
+                    e.printStackTrace(pw)
+                    sw.toString()
+                }
+            }
+            dependency.stackTrace = stackTrace
+            if (uploadUrl.isNotEmpty()) {
+                dependency.uploadUrl = uploadUrl
+            }
             return UploadResult(false, "上传文件失败: ${e.message}")
         }
     }
