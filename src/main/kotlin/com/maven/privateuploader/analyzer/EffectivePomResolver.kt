@@ -3,6 +3,8 @@ package com.maven.privateuploader.analyzer
 import com.intellij.openapi.diagnostic.thisLogger
 import org.apache.maven.model.Model
 import org.apache.maven.model.building.*
+import org.apache.maven.model.resolution.ModelResolver
+import org.apache.maven.model.resolution.UnresolvableModelException
 import java.io.File
 import java.util.Properties
 
@@ -19,10 +21,72 @@ class EffectivePomResolver {
     
     private val logger = thisLogger()
     private val modelBuilder: ModelBuilder
+    private val localRepositoryPath: String
     
     init {
         // 使用工厂创建 ModelBuilder 实例
         modelBuilder = DefaultModelBuilderFactory().newInstance()
+        // 获取本地 Maven 仓库路径
+        localRepositoryPath = getLocalMavenRepositoryPath()
+    }
+    
+    /**
+     * 获取本地 Maven 仓库路径
+     */
+    private fun getLocalMavenRepositoryPath(): String {
+        val mavenHome = System.getProperty("user.home")
+        return System.getProperty("maven.repo.local", "$mavenHome/.m2/repository")
+    }
+    
+    /**
+     * 创建 ModelResolver，用于从本地仓库解析父 POM
+     */
+    private fun createModelResolver(): ModelResolver {
+        return object : ModelResolver {
+            override fun resolveModel(groupId: String, artifactId: String, version: String): ModelSource {
+                val pomPath = File(
+                    localRepositoryPath,
+                    "${groupId.replace('.', '/')}/$artifactId/$version/$artifactId-$version.pom"
+                )
+                
+                if (pomPath.exists() && pomPath.isFile) {
+                    logger.debug("从本地仓库解析 POM: $groupId:$artifactId:$version -> ${pomPath.absolutePath}")
+                    return FileModelSource(pomPath)
+                } else {
+                    logger.warn("本地仓库中找不到 POM: $groupId:$artifactId:$version (路径: ${pomPath.absolutePath})")
+                    throw UnresolvableModelException(
+                        "无法从本地仓库解析 POM: $groupId:$artifactId:$version",
+                        groupId,
+                        artifactId,
+                        version
+                    )
+                }
+            }
+
+            override fun resolveModel(parent: org.apache.maven.model.Parent): ModelSource {
+                return resolveModel(parent.groupId, parent.artifactId, parent.version)
+            }
+
+            override fun resolveModel(dependency: org.apache.maven.model.Dependency): ModelSource {
+                return resolveModel(dependency.groupId, dependency.artifactId, dependency.version)
+            }
+
+            override fun addRepository(repository: org.apache.maven.model.Repository) {
+                // 本地解析器不支持远程仓库，忽略
+            }
+
+            override fun addRepository(
+                repository: org.apache.maven.model.Repository,
+                replace: Boolean
+            ) {
+                // 本地解析器不支持远程仓库，忽略
+            }
+
+            override fun newCopy(): ModelResolver {
+                // 返回新的实例
+                return createModelResolver()
+            }
+        }
     }
     
     /**
@@ -58,8 +122,9 @@ class EffectivePomResolver {
             request.systemProperties = System.getProperties() as Properties
             request.userProperties = Properties() // 可以额外传用户属性
             
-            // 如果暂时不接远程仓库/ModelResolver，这里先只做本地有效 POM 构建
-            // 注意：如果父 POM 不在本地仓库，可能会失败
+            // 设置 ModelResolver，用于解析父 POM
+            request.modelResolver = createModelResolver()
+            
             val result = modelBuilder.build(request)
             
             val effectiveModel = result.effectiveModel
