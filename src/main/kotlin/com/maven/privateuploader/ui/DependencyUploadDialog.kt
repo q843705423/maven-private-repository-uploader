@@ -41,6 +41,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private lateinit var tableScrollPane: JBScrollPane
     private lateinit var statusLabel: JBLabel
     private lateinit var projectInfoLabel: JBLabel
+    private lateinit var repoStatusLabel: JBLabel
+    private lateinit var buttonAreaWarningLabel: JBLabel
     private lateinit var checkAllButton: JButton
     private lateinit var uncheckAllButton: JButton
     private lateinit var scanButton: JButton
@@ -95,6 +97,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     }
 
     private fun createMainPanel(): JPanel {
+        // 仓库配置状态面板（顶部）
+        val repoStatusPanel = createRepoStatusPanel()
+        
         // 项目信息面板
         val projectInfoPanel = createProjectInfoPanel()
 
@@ -115,11 +120,16 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         val mainPanel = JPanel(BorderLayout(0, JBUI.scale(5)))
         mainPanel.border = JBUI.Borders.empty(10)
 
-        // 将项目信息、过滤搜索和工具栏放在一个垂直面板中
-        val topPanel = JPanel(BorderLayout())
-        topPanel.add(projectInfoPanel, BorderLayout.NORTH)
-        topPanel.add(filterSearchPanel, BorderLayout.CENTER)
-        topPanel.add(toolbarPanel, BorderLayout.SOUTH)
+        // 将仓库状态、项目信息、过滤搜索和工具栏放在一个垂直面板中
+        val topPanel = JPanel()
+        topPanel.layout = BoxLayout(topPanel, BoxLayout.Y_AXIS)
+        topPanel.add(repoStatusPanel)
+        topPanel.add(Box.createVerticalStrut(5))
+        topPanel.add(projectInfoPanel)
+        topPanel.add(Box.createVerticalStrut(5))
+        topPanel.add(filterSearchPanel)
+        topPanel.add(Box.createVerticalStrut(5))
+        topPanel.add(toolbarPanel)
         mainPanel.add(topPanel, BorderLayout.NORTH)
 
         // 表格面板
@@ -131,6 +141,49 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         mainPanel.add(statusLabel, BorderLayout.SOUTH)
 
         return mainPanel
+    }
+
+    /**
+     * 创建仓库配置状态面板（顶部显示）
+     */
+    private fun createRepoStatusPanel(): JPanel {
+        repoStatusLabel = JBLabel()
+        repoStatusLabel.border = JBUI.Borders.empty(5, 0, 5, 0)
+
+        val panel = JPanel(BorderLayout())
+        panel.add(repoStatusLabel, BorderLayout.CENTER)
+        panel.border = javax.swing.BorderFactory.createCompoundBorder(
+            javax.swing.BorderFactory.createLineBorder(java.awt.Color.GRAY),
+            javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10)
+        )
+        // 不设置背景色，使用默认主题背景
+
+        // 初始化显示
+        updateRepoStatusDisplay()
+
+        return panel
+    }
+
+    /**
+     * 更新仓库配置状态显示
+     */
+    private fun updateRepoStatusDisplay() {
+        val currentConfig = config ?: PrivateRepoConfigurable.getConfig()
+        
+        if (currentConfig.enabled && currentConfig.isValid()) {
+            val repoUrl = currentConfig.getDeployUrl()
+            repoStatusLabel.text = "<html><b>当前仓库：</b>$repoUrl<br><b>状态：</b><span style='color:green;'>已通过测试</span></html>"
+            // 隐藏按钮区的警告
+            if (::buttonAreaWarningLabel.isInitialized) {
+                buttonAreaWarningLabel.isVisible = false
+            }
+        } else {
+            repoStatusLabel.text = "<html><b>当前仓库：</b>未配置<br><b>状态：</b><span style='color:red;'>配置缺失</span></html>"
+            // 显示按钮区的警告
+            if (::buttonAreaWarningLabel.isInitialized) {
+                buttonAreaWarningLabel.isVisible = true
+            }
+        }
     }
 
     private fun createProjectInfoPanel(): JPanel {
@@ -280,6 +333,13 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     }
 
     private fun createToolbarPanel(): JPanel {
+        // 配置警告标签（在按钮上方显示）
+        buttonAreaWarningLabel = JBLabel("⚠ 请先完成配置")
+        buttonAreaWarningLabel.foreground = Color(200, 0, 0) // 红色
+        buttonAreaWarningLabel.font = buttonAreaWarningLabel.font.deriveFont(java.awt.Font.BOLD)
+        buttonAreaWarningLabel.border = JBUI.Borders.empty(5, 0, 5, 0)
+        buttonAreaWarningLabel.isVisible = false
+
         // 主按钮：一键扫描并检查缺失依赖
         oneClickButton = JButton("一键扫描并检查私仓缺失依赖")
         oneClickButton.addActionListener { oneClickScanAndCheck() }
@@ -338,6 +398,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         val toolbarPanel = JPanel()
         toolbarPanel.layout = BoxLayout(toolbarPanel, BoxLayout.Y_AXIS)
         toolbarPanel.border = javax.swing.BorderFactory.createEmptyBorder(5, 0, 5, 0)
+
+        // 配置警告行（如果配置不完整则显示）
+        toolbarPanel.add(buttonAreaWarningLabel)
 
         // 第一行：主按钮、上传按钮和高级操作切换按钮
         val mainButtonPanel = JPanel()
@@ -418,6 +481,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
         // 加载配置（但不检查）
         config = PrivateRepoConfigurable.getConfig()
+        
+        // 更新仓库配置状态显示
+        updateRepoStatusDisplay()
 
         updateStatus("正在扫描 Maven 依赖…")
         setButtonsEnabled(false)
@@ -571,6 +637,10 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
         // 加载配置
         config = PrivateRepoConfigurable.getConfig()
+        
+        // 更新仓库配置状态显示
+        updateRepoStatusDisplay()
+        
         val currentConfig = config
         if (currentConfig == null || !currentConfig.enabled || !currentConfig.isValid()) {
             val result = Messages.showDialog(
@@ -680,6 +750,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         com.intellij.openapi.options.ShowSettingsUtil.getInstance().showSettingsDialog(project, "Maven私仓上传")
         // 重新加载配置并重新初始化
         config = PrivateRepoConfigurable.getConfig()
+        // 更新仓库配置状态显示
+        updateRepoStatusDisplay()
         // 配置变更后重新初始化依赖分析
         reinitializeAfterConfigChange()
     }
@@ -691,6 +763,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private fun reinitializeAfterConfigChange() {
         // 重新加载配置
         config = PrivateRepoConfigurable.getConfig()
+        
+        // 更新仓库配置状态显示
+        updateRepoStatusDisplay()
         
         // 统一流程：扫描完成后自动检查
         scanDependenciesOnly(autoCheckAfterScan = true)
