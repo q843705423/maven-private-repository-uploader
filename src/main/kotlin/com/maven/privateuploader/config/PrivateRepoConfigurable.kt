@@ -355,13 +355,13 @@ class PrivateRepoConfigurable : Configurable {
             logger.info("URL解析成功: $url")
         } catch (e: java.net.URISyntaxException) {
             logger.warn("URL格式错误", e)
-            return TestResult(false, "URL格式错误：${e.message}")
+            return TestResult(false, "URL格式错误：${e.message}\n地址: $testUrl")
         } catch (e: java.net.MalformedURLException) {
             logger.warn("URL格式错误", e)
-            return TestResult(false, "URL格式错误：${e.message}")
+            return TestResult(false, "URL格式错误：${e.message}\n地址: $testUrl")
         } catch (e: Throwable) {
             logger.error("URL解析时发生未知异常", e)
-            return TestResult(false, "URL解析失败：${e.javaClass.simpleName} - ${e.message}")
+            return TestResult(false, "URL解析失败：${e.javaClass.simpleName} - ${e.message}\n地址: $testUrl")
         }
 
         val httpClient = createHttpClient(config)
@@ -396,45 +396,45 @@ class PrivateRepoConfigurable : Configurable {
                         TestResult(true, "连接正常 (HTTP $statusCode, 耗时: ${elapsedTime}ms)")
                     }
                     statusCode == 401 -> {
-                        TestResult(false, "认证失败：用户名或密码错误（HTTP 401）")
+                        TestResult(false, "认证失败：用户名或密码错误（HTTP 401）\n地址: $testUrl")
                     }
                     statusCode == 403 -> {
-                        TestResult(false, "权限不足：当前用户没有访问权限（HTTP 403）")
+                        TestResult(false, "权限不足：当前用户没有访问权限（HTTP 403）\n地址: $testUrl")
                     }
                     statusCode == 404 -> {
-                        TestResult(false, "地址不存在：私仓URL无法访问（HTTP 404）")
+                        TestResult(false, "地址不存在：私仓URL无法访问（HTTP 404）\n地址: $testUrl")
                     }
                     else -> {
-                        TestResult(false, "连接失败：HTTP $statusCode - ${response.message}")
+                        TestResult(false, "连接失败：HTTP $statusCode - ${response.message}\n地址: $testUrl")
                     }
                 }
             }
         } catch (e: java.net.SocketTimeoutException) {
             logger.warn("连接超时", e)
-            TestResult(false, "连接超时：无法在指定时间内连接到私仓（已等待5秒）")
+            TestResult(false, "连接超时：无法在指定时间内连接到私仓（已等待5秒）\n地址: $testUrl")
         } catch (e: java.io.InterruptedIOException) {
             // OkHttp超时时可能抛出InterruptedIOException
             logger.warn("连接超时（InterruptedIOException）", e)
-            TestResult(false, "连接超时：无法在指定时间内连接到私仓（已等待5秒）")
+            TestResult(false, "连接超时：无法在指定时间内连接到私仓（已等待5秒）\n地址: $testUrl")
         } catch (e: java.net.UnknownHostException) {
             logger.warn("无法解析主机名", e)
-            TestResult(false, "地址不可达：无法解析主机名（${e.message}）")
+            TestResult(false, "地址不可达：无法解析主机名（${e.message}）\n地址: $testUrl")
         } catch (e: java.net.ConnectException) {
             logger.warn("连接被拒绝", e)
-            TestResult(false, "连接被拒绝：无法连接到私仓服务器")
+            TestResult(false, "连接被拒绝：无法连接到私仓服务器\n地址: $testUrl")
         } catch (e: javax.net.ssl.SSLException) {
             logger.warn("SSL连接失败", e)
-            TestResult(false, "SSL连接失败：${e.message}")
+            TestResult(false, "SSL连接失败：${e.message}\n地址: $testUrl")
         } catch (e: java.net.SocketException) {
             logger.warn("网络连接错误", e)
-            TestResult(false, "网络连接错误：${e.message}")
+            TestResult(false, "网络连接错误：${e.message}\n地址: $testUrl")
         } catch (e: java.io.IOException) {
             logger.error("IO异常", e)
-            TestResult(false, "网络IO错误：${e.message ?: e.javaClass.simpleName}")
+            TestResult(false, "网络IO错误：${e.message ?: e.javaClass.simpleName}\n地址: $testUrl")
         } catch (e: Throwable) {
             // 捕获所有其他异常，包括Error
             logger.error("连接测试时发生未知异常", e)
-            TestResult(false, "测试失败：${e.javaClass.simpleName} - ${e.message ?: "未知错误"}")
+            TestResult(false, "测试失败：${e.javaClass.simpleName} - ${e.message ?: "未知错误"}\n地址: $testUrl")
         }
     }
 
