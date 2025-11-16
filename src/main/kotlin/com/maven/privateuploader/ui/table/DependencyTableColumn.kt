@@ -89,13 +89,14 @@ enum class DependencyTableColumn(
 
     /**
      * 本地路径列
+     * 返回预期路径（即使文件不存在也会返回预期路径，便于在UI中显示）
      */
     LOCAL_PATH(
         displayName = "本地路径",
         columnClass = String::class.java,
         preferredWidth = 300,
         editable = false,
-        valueExtractor = { it.localPath },
+        valueExtractor = { it.getExpectedLocalPath() },
         defaultValue = ""
     );
 

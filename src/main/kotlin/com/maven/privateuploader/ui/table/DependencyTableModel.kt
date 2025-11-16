@@ -160,6 +160,11 @@ class DependencyTableModel : AbstractTableModel() {
                 if (column == DependencyTableColumn.STATUS) {
                     tableColumn.cellRenderer = StatusCellRenderer()
                 }
+                
+                // 设置本地路径列的渲染器
+                if (column == DependencyTableColumn.LOCAL_PATH) {
+                    tableColumn.cellRenderer = LocalPathCellRenderer()
+                }
             }
 
             // 设置其他列的默认渲染器
@@ -175,6 +180,7 @@ class DependencyTableModel : AbstractTableModel() {
 
     /**
      * 状态列的渲染器
+     * 明确标注是"私仓状态"，避免与本地仓库混淆
      */
     private class StatusCellRenderer : ColoredTableCellRenderer() {
 
@@ -189,22 +195,65 @@ class DependencyTableModel : AbstractTableModel() {
             if (value is CheckStatus) {
                 when (value) {
                     CheckStatus.EXISTS -> {
-                        append("已存在", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.GREEN))
+                        append("私仓-已存在", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.GREEN))
                     }
                     CheckStatus.MISSING -> {
-                        append("缺失", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.RED))
+                        append("私仓-缺失", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.RED))
                     }
                     CheckStatus.CHECKING -> {
-                        append("检查中", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.ORANGE))
+                        append("私仓-检查中", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.ORANGE))
                     }
                     CheckStatus.ERROR -> {
-                        append("错误", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.RED))
+                        append("私仓-错误", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.RED))
                     }
                     CheckStatus.UNKNOWN -> {
-                        append("未知", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.GRAY))
+                        append("未检查", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.GRAY))
                     }
                 }
             } else {
+                append(value?.toString() ?: "", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+            }
+        }
+    }
+    
+    /**
+     * 本地路径列的渲染器
+     * 当文件不存在时，显示预期路径并添加提示
+     */
+    private class LocalPathCellRenderer : ColoredTableCellRenderer() {
+        
+        override fun customizeCellRenderer(
+            table: JTable,
+            value: Any?,
+            selected: Boolean,
+            hasFocus: Boolean,
+            row: Int,
+            column: Int
+        ) {
+            val model = table.model as? DependencyTableModel
+            val dependency = model?.getDependencyAt(row)
+            
+            if (dependency != null) {
+                val fileExists = dependency.isLocalFileExists()
+                
+                if (fileExists) {
+                    // 文件存在，显示实际路径（可能和预期路径不同，比如有classifier的情况）
+                    val actualPath = dependency.localPath
+                    append(actualPath, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                } else {
+                    // 文件不存在，显示预期路径并添加提示（灰色斜体）
+                    val expectedPath = value?.toString() ?: dependency.getExpectedLocalPath()
+                    append(expectedPath, SimpleTextAttributes(
+                        SimpleTextAttributes.STYLE_ITALIC,
+                        java.awt.Color.GRAY
+                    ))
+                    append(" [文件不存在]", SimpleTextAttributes(
+                        SimpleTextAttributes.STYLE_ITALIC,
+                        java.awt.Color(128, 128, 128) // 更浅的灰色
+                    ))
+                }
+            } else {
+                // 无法获取依赖信息，显示原始值
                 append(value?.toString() ?: "", SimpleTextAttributes.REGULAR_ATTRIBUTES)
             }
         }

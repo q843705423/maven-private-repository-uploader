@@ -1,5 +1,7 @@
 package com.maven.privateuploader.model
 
+import java.io.File
+
 /**
  * Maven依赖信息数据类
  *
@@ -31,6 +33,46 @@ data class DependencyInfo(
      * 获取完整的构件坐标
      */
     fun getCoordinate(): String = "$groupId:$artifactId:$version:$packaging"
+
+    /**
+     * 获取预期的本地文件路径（即使文件不存在也会返回预期路径）
+     * 用于在UI中显示，即使文件不存在也能看到预期的路径位置
+     */
+    fun getExpectedLocalPath(): String {
+        // 如果已有实际路径，直接返回
+        if (localPath.isNotEmpty()) {
+            return localPath
+        }
+        
+        // 构建预期的本地仓库路径
+        val localRepoPath = getLocalMavenRepositoryPath()
+        val extension = if (packaging == "pom") "pom" else packaging
+        val fileName = if (packaging == "pom") {
+            "$artifactId-$version.pom"
+        } else {
+            "$artifactId-$version.$extension"
+        }
+        
+        val expectedPath = File(localRepoPath,
+            "${groupId.replace('.', '/')}/$artifactId/$version/$fileName")
+        return expectedPath.absolutePath
+    }
+    
+    /**
+     * 检查本地文件是否实际存在
+     */
+    fun isLocalFileExists(): Boolean {
+        return localPath.isNotEmpty() && File(localPath).exists()
+    }
+    
+    /**
+     * 获取本地 Maven 仓库路径
+     */
+    private fun getLocalMavenRepositoryPath(): String {
+        val mavenHome = System.getProperty("user.home")
+        val mavenRepo = System.getProperty("maven.repo.local", "$mavenHome/.m2/repository")
+        return File(mavenRepo).absolutePath
+    }
 
     override fun toString(): String = getGAV()
 
