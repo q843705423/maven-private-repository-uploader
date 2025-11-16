@@ -295,11 +295,18 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
         val currentConfig = config
         if (currentConfig == null || !currentConfig.enabled || !currentConfig.isValid()) {
-            Messages.showWarningDialog(
+            val result = Messages.showDialog(
                 project,
-                "私仓配置不完整，无法检查依赖状态",
-                "配置错误"
+                "私仓配置不完整，无法检查依赖状态。请先配置私仓设置。",
+                "配置错误",
+                arrayOf("去配置", "取消"),
+                0,
+                Messages.getWarningIcon(),
+                null
             )
+            if (result == 0) {
+                openSettings()
+            }
             return
         }
 
@@ -390,11 +397,18 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         config = PrivateRepoConfigurable.getConfig()
         val currentConfig = config
         if (currentConfig == null || !currentConfig.enabled || !currentConfig.isValid()) {
-            Messages.showWarningDialog(
+            val result = Messages.showDialog(
                 project,
                 "私仓配置不完整，无法检查依赖状态。请先配置私仓设置。",
-                "配置错误"
+                "配置错误",
+                arrayOf("去配置", "取消"),
+                0,
+                Messages.getWarningIcon(),
+                null
             )
+            if (result == 0) {
+                openSettings()
+            }
             return
         }
 
@@ -510,11 +524,18 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
         val currentConfig = config
         if (currentConfig == null || !currentConfig.isValid()) {
-            Messages.showWarningDialog(
+            val result = Messages.showDialog(
                 project,
-                "私仓配置不完整，无法上传依赖",
-                "配置错误"
+                "私仓配置不完整，无法上传依赖。请先配置私仓设置。",
+                "配置错误",
+                arrayOf("去配置", "取消"),
+                0,
+                Messages.getWarningIcon(),
+                null
             )
+            if (result == 0) {
+                openSettings()
+            }
             return
         }
 
