@@ -60,6 +60,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private lateinit var showSearchButton: JButton
     private lateinit var exportButton: JButton
     
+    // 防止选择同步循环更新的标志
+    private var isUpdatingSelection = false
+    
     // 过滤和搜索组件
     private lateinit var filterPanel: JPanel
     private lateinit var searchTextField: JBTextField
@@ -425,10 +428,10 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         showSearchButton = JButton("打开搜索框")
         showSearchButton.addActionListener { toggleSearchPanel() }
 
-        // 导出缺失依赖列表按钮（添加到高级面板）
-        exportButton = JButton("导出缺失依赖列表")
-        exportButton.toolTipText = "将缺失的依赖列表导出为 Excel 文件"
-        exportButton.addActionListener { exportMissingDependencies() }
+        // 导出选中依赖列表按钮（添加到高级面板）
+        exportButton = JButton("导出选中依赖")
+        exportButton.toolTipText = "将表格中选中的依赖导出为 Excel 文件（支持 Shift/Ctrl 多选）"
+        exportButton.addActionListener { exportSelectedDependencies() }
 
         // 将高级操作按钮添加到高级面板
         advancedPanel.add(checkAllButton)
@@ -502,6 +505,53 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                 }
             }
         })
+        
+        // 添加行选择监听器，同步表格行选择和复选框状态
+        // 支持 Shift/Ctrl 范围选择
+        dependencyTable.selectionModel.addListSelectionListener { e ->
+            if (!e.valueIsAdjusting && !isUpdatingSelection) {
+                isUpdatingSelection = true
+                try {
+                    // 获取所有选中的行（包括通过 Shift/Ctrl 选择的）
+                    val selectedRows = dependencyTable.selectedRows
+                    // 先取消所有行的选择状态
+                    tableModel.getDependencies().forEach { it.selected = false }
+                    // 然后设置选中行的选择状态
+                    selectedRows.forEach { viewRowIndex ->
+                        val dependency = tableModel.getDependencyAt(viewRowIndex)
+                        dependency?.selected = true
+                    }
+                    // 更新表格显示
+                    tableModel.fireTableDataChanged()
+                    updateStatusWithCounts()
+                } finally {
+                    isUpdatingSelection = false
+                }
+            }
+        }
+        
+        // 添加表格模型监听器，当复选框状态改变时同步行选择
+        tableModel.addTableModelListener { e ->
+            if (!isUpdatingSelection && e.column == DependencyTableColumn.SELECTED.ordinal) {
+                isUpdatingSelection = true
+                try {
+                    // 获取所有选中的依赖（通过复选框）
+                    val selectedDeps = tableModel.getSelectedDependencies()
+                    // 清除当前行选择
+                    dependencyTable.clearSelection()
+                    // 根据复选框状态设置行选择
+                    for (i in 0 until tableModel.rowCount) {
+                        val dependency = tableModel.getDependencyAt(i)
+                        if (dependency != null && dependency.selected) {
+                            dependencyTable.addRowSelectionInterval(i, i)
+                        }
+                    }
+                    updateStatusWithCounts()
+                } finally {
+                    isUpdatingSelection = false
+                }
+            }
+        }
     }
 
     private fun createStatusBar() {
@@ -979,29 +1029,37 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     }
 
     /**
-     * 导出缺失依赖列表到 Excel
+     * 导出表格中选中的依赖到 Excel
+     * 支持通过 Shift/Ctrl 选择多行，也支持通过复选框选择
      */
-    private fun exportMissingDependencies() {
-        val allDeps = tableModel.getDependencies()
+    private fun exportSelectedDependencies() {
+        // 优先使用复选框选择状态（更可靠）
+        val checkboxSelectedDeps = tableModel.getSelectedDependencies()
         
-        if (allDeps.isEmpty()) {
-            Messages.showInfoMessage(
-                project,
-                "没有依赖数据可导出",
-                "提示"
-            )
-            return
+        // 如果复选框没有选择，则使用表格行选择
+        val selectedDeps = if (checkboxSelectedDeps.isNotEmpty()) {
+            checkboxSelectedDeps
+        } else {
+            // 获取表格中选中的行（支持 Shift/Ctrl 多选）
+            val selectedRows = dependencyTable.selectedRows
+            if (selectedRows.isEmpty()) {
+                Messages.showInfoMessage(
+                    project,
+                    "请先在表格中选择要导出的依赖（支持 Shift/Ctrl 多选或通过复选框选择）",
+                    "提示"
+                )
+                return
+            }
+            // 获取选中行对应的依赖
+            selectedRows.toList().mapNotNull { viewRowIndex ->
+                tableModel.getDependencyAt(viewRowIndex)
+            }
         }
 
-        // 获取缺失的依赖
-        val missingDeps = allDeps.filter { 
-            it.checkStatus == CheckStatus.MISSING || !it.isLocalFileExists()
-        }
-
-        if (missingDeps.isEmpty()) {
+        if (selectedDeps.isEmpty()) {
             Messages.showInfoMessage(
                 project,
-                "当前没有缺失的依赖",
+                "没有有效的依赖数据可导出",
                 "提示"
             )
             return
@@ -1014,7 +1072,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         fileChooser.fileFilter = FileNameExtensionFilter("Excel 文件 (*.xlsx)", "xlsx")
         
         // 设置默认文件名
-        val defaultFileName = "缺失依赖列表_${System.currentTimeMillis()}.xlsx"
+        val defaultFileName = "依赖列表_${System.currentTimeMillis()}.xlsx"
         fileChooser.selectedFile = File(System.getProperty("user.home"), defaultFileName)
         
         val result = fileChooser.showSaveDialog(window)
@@ -1049,14 +1107,14 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         // 执行导出
         try {
             ExcelExportService.exportDependencies(
-                dependencies = allDeps,
+                dependencies = selectedDeps,
                 filePath = filePath,
-                exportMissingOnly = true
+                exportMissingOnly = false
             )
             
             Messages.showInfoMessage(
                 project,
-                "导出成功！\n文件路径: $filePath\n共导出 ${missingDeps.size} 个缺失依赖",
+                "导出成功！\n文件路径: $filePath\n共导出 ${selectedDeps.size} 个依赖",
                 "导出完成"
             )
         } catch (e: IOException) {
