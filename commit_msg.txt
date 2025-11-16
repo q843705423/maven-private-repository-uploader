@@ -1,0 +1,2 @@
+修复：支持解析Maven属性（properties），解决${property}变量未解析的问题
+

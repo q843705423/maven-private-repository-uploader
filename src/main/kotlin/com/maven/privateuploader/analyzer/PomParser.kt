@@ -29,7 +29,8 @@ class PomParser {
         val artifactId: String?,
         val version: String?,
         val parent: ParentInfo?,
-        val bomDependencies: List<BomDependency>
+        val bomDependencies: List<BomDependency>,
+        val properties: Map<String, String>
     )
     
     /**
@@ -71,19 +72,53 @@ class PomParser {
             val namespaceURI = document.documentElement.namespaceURI
             logger.debug("POM 文件命名空间: $namespaceURI")
             
-            val groupId = getElementText(document, "groupId", namespaceURI)
-            val artifactId = getElementText(document, "artifactId", namespaceURI)
-            val version = getElementText(document, "version", namespaceURI)
+            // 解析基本信息（原始值，可能包含属性引用）
+            val rawGroupId = getElementText(document, "groupId", namespaceURI)
+            val rawArtifactId = getElementText(document, "artifactId", namespaceURI)
+            val rawVersion = getElementText(document, "version", namespaceURI)
             
-            val parent = parseParent(document, namespaceURI)
-            val bomDependencies = parseBomDependencies(document, namespaceURI)
+            // 解析父 POM（原始值，可能包含属性引用）
+            val rawParent = parseParent(document, namespaceURI)
+            
+            // 先解析当前 POM 的 properties（用于解析父 POM 的 version）
+            val currentProperties = parseProperties(document, namespaceURI)
+            
+            // 如果父 POM 的 version 包含属性引用，先解析它
+            val resolvedParent = if (rawParent != null) {
+                val resolvedVersion = resolveProperties(rawParent.version, currentProperties)
+                if (resolvedVersion != null && resolvedVersion != rawParent.version) {
+                    // 如果 version 被解析了，需要重新构建父 POM 路径
+                    ParentInfo(
+                        groupId = rawParent.groupId,
+                        artifactId = rawParent.artifactId,
+                        version = resolvedVersion,
+                        relativePath = rawParent.relativePath
+                    )
+                } else {
+                    rawParent
+                }
+            } else {
+                null
+            }
+            
+            // 合并父 POM 的属性（父 POM 的属性优先级更高）
+            val allProperties = mergeParentProperties(currentProperties, resolvedParent)
+            
+            // 应用属性解析到基本信息
+            val groupId = resolveProperties(rawGroupId, allProperties)
+            val artifactId = resolveProperties(rawArtifactId, allProperties)
+            val version = resolveProperties(rawVersion, allProperties)
+            
+            // 解析 BOM 依赖（需要应用属性解析）
+            val bomDependencies = parseBomDependencies(document, namespaceURI, allProperties)
             
             PomInfo(
                 groupId = groupId,
                 artifactId = artifactId,
                 version = version,
-                parent = parent,
-                bomDependencies = bomDependencies
+                parent = resolvedParent,
+                bomDependencies = bomDependencies,
+                properties = allProperties
             )
         } catch (e: Exception) {
             logger.error("解析 POM 文件失败: ${pomFile.absolutePath}", e)
@@ -93,6 +128,8 @@ class PomParser {
     
     /**
      * 解析父 POM 信息
+     * 注意：这个方法在 parsePom 中调用时，properties 还没有完全解析，所以这里只解析原始值
+     * 属性解析会在 parsePom 的主流程中完成
      */
     private fun parseParent(document: Document, namespaceURI: String?): ParentInfo? {
         val parentNode = getElementByTagName(document, "parent", namespaceURI) as? Element
@@ -118,9 +155,114 @@ class PomParser {
     }
     
     /**
+     * 解析 properties 节点
+     */
+    private fun parseProperties(document: Document, namespaceURI: String?): Map<String, String> {
+        val properties = mutableMapOf<String, String>()
+        
+        try {
+            val propertiesNode = getElementByTagName(document, "properties", namespaceURI) as? Element
+                ?: return properties
+            
+            // 获取 properties 节点的所有子元素
+            val childNodes = propertiesNode.childNodes
+            for (i in 0 until childNodes.length) {
+                val node = childNodes.item(i)
+                if (node.nodeType == Node.ELEMENT_NODE) {
+                    val element = node as Element
+                    val propertyName = element.tagName
+                    val propertyValue = element.textContent?.trim() ?: ""
+                    if (propertyName.isNotBlank() && propertyValue.isNotBlank()) {
+                        properties[propertyName] = propertyValue
+                        logger.debug("解析属性: $propertyName = $propertyValue")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn("解析 properties 时发生错误", e)
+        }
+        
+        return properties
+    }
+    
+    /**
+     * 合并父 POM 的属性
+     * 父 POM 的属性会覆盖子 POM 的同名属性
+     */
+    private fun mergeParentProperties(
+        currentProperties: Map<String, String>,
+        parent: ParentInfo?
+    ): Map<String, String> {
+        if (parent == null) {
+            return currentProperties
+        }
+        
+        // 尝试加载父 POM 的属性
+        val parentPomFile = buildLocalPomPath(parent.groupId, parent.artifactId, parent.version)
+        if (!parentPomFile.exists() || !parentPomFile.isFile) {
+            logger.debug("父 POM 文件不存在，无法继承属性: ${parentPomFile.absolutePath}")
+            return currentProperties
+        }
+        
+        try {
+            val parentPomInfo = parsePom(parentPomFile)
+            if (parentPomInfo != null) {
+                // 合并属性：父 POM 的属性优先级更高
+                val merged = mutableMapOf<String, String>()
+                merged.putAll(currentProperties)
+                merged.putAll(parentPomInfo.properties)
+                logger.debug("合并父 POM 属性: 当前 ${currentProperties.size} 个，父 POM ${parentPomInfo.properties.size} 个，合并后 ${merged.size} 个")
+                return merged
+            }
+        } catch (e: Exception) {
+            logger.warn("解析父 POM 属性时发生错误: ${parentPomFile.absolutePath}", e)
+        }
+        
+        return currentProperties
+    }
+    
+    /**
+     * 解析属性引用，将 ${property.name} 替换为实际值
+     * 支持嵌套属性引用（如 ${project.version}）
+     */
+    private fun resolveProperties(text: String?, properties: Map<String, String>): String? {
+        if (text.isNullOrBlank()) {
+            return text
+        }
+        
+        var result: String = text
+        val propertyPattern = Regex("\\$\\{([^}]+)\\}")
+        var maxIterations = 10  // 防止无限循环
+        var changed = true
+        
+        while (changed && maxIterations > 0) {
+            changed = false
+            result = propertyPattern.replace(result) { matchResult ->
+                val propertyName = matchResult.groupValues[1]
+                val propertyValue = properties[propertyName]
+                if (propertyValue != null) {
+                    changed = true
+                    propertyValue
+                } else {
+                    // 如果属性未找到，保留原始引用（可能是系统属性或其他）
+                    logger.debug("未找到属性: $propertyName，保留原始引用")
+                    matchResult.value
+                }
+            }
+            maxIterations--
+        }
+        
+        if (maxIterations == 0 && result.contains("\${")) {
+            logger.warn("属性解析可能未完成，可能存在循环引用或未解析的属性: $result")
+        }
+        
+        return result
+    }
+    
+    /**
      * 解析 dependencyManagement 中 scope=import 的 BOM 依赖
      */
-    private fun parseBomDependencies(document: Document, namespaceURI: String?): List<BomDependency> {
+    private fun parseBomDependencies(document: Document, namespaceURI: String?, properties: Map<String, String>): List<BomDependency> {
         val bomDependencies = mutableListOf<BomDependency>()
         
         try {
@@ -149,9 +291,14 @@ class PomParser {
                     continue
                 }
                 
-                val groupId = getElementText(dependencyNode, "groupId", namespaceURI)
-                val artifactId = getElementText(dependencyNode, "artifactId", namespaceURI)
-                val version = getElementText(dependencyNode, "version", namespaceURI)
+                val rawGroupId = getElementText(dependencyNode, "groupId", namespaceURI)
+                val rawArtifactId = getElementText(dependencyNode, "artifactId", namespaceURI)
+                val rawVersion = getElementText(dependencyNode, "version", namespaceURI)
+                
+                // 应用属性解析
+                val groupId = resolveProperties(rawGroupId, properties)
+                val artifactId = resolveProperties(rawArtifactId, properties)
+                val version = resolveProperties(rawVersion, properties)
                 
                 if (groupId.isNullOrBlank() || artifactId.isNullOrBlank() || version.isNullOrBlank()) {
                     logger.warn("BOM 依赖信息不完整: groupId=$groupId, artifactId=$artifactId, version=$version")
