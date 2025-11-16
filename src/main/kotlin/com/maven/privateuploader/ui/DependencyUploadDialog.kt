@@ -44,6 +44,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private lateinit var refreshButton: JButton
     private lateinit var configButton: JButton
     private lateinit var uploadButton: JButton
+    private lateinit var oneClickButton: JButton
+    private lateinit var advancedToggleButton: JButton
+    private lateinit var advancedPanel: JPanel
 
     private var dependencies: List<DependencyInfo> = emptyList()
     private var config: RepositoryConfig? = null
@@ -54,7 +57,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         setOKButtonText("关闭")
         init()
         
-        // Dialog打开时只扫描依赖，不检查私仓
+        // Dialog打开时只扫描依赖，不检查私仓（保持原有行为，不自动执行一键操作）
         SwingUtilities.invokeLater { 
             scanDependenciesOnly() 
         }
@@ -114,6 +117,21 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     }
 
     private fun createToolbarPanel(): JPanel {
+        // 主按钮：一键扫描并检查缺失依赖
+        oneClickButton = JButton("一键扫描并检查缺失依赖")
+        oneClickButton.addActionListener { oneClickScanAndCheck() }
+        // 设置主按钮样式，使其更突出
+        oneClickButton.font = oneClickButton.font.deriveFont(java.awt.Font.BOLD, oneClickButton.font.size + 1f)
+
+        // 高级操作按钮（切换显示/隐藏）
+        advancedToggleButton = JButton("高级操作 ▼")
+        advancedToggleButton.addActionListener { toggleAdvancedOptions() }
+
+        // 高级操作面板（默认隐藏）
+        advancedPanel = JPanel()
+        advancedPanel.layout = BoxLayout(advancedPanel, BoxLayout.X_AXIS)
+        advancedPanel.isVisible = false
+
         checkAllButton = JButton("全部勾选")
         checkAllButton.addActionListener { selectAllDependencies(true) }
 
@@ -132,22 +150,35 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         uploadButton = JButton("上传到私仓")
         uploadButton.addActionListener { uploadSelectedDependencies() }
 
-        // 使用 BoxLayout 替代 FlowLayout + Glue 的组合
+        // 将高级操作按钮添加到高级面板
+        advancedPanel.add(checkAllButton)
+        advancedPanel.add(Box.createHorizontalStrut(10))
+        advancedPanel.add(uncheckAllButton)
+        advancedPanel.add(Box.createHorizontalStrut(10))
+        advancedPanel.add(scanButton)
+        advancedPanel.add(Box.createHorizontalStrut(10))
+        advancedPanel.add(refreshButton)
+        advancedPanel.add(Box.createHorizontalStrut(10))
+        advancedPanel.add(configButton)
+        advancedPanel.add(Box.createHorizontalGlue())
+        advancedPanel.add(uploadButton)
+
+        // 主工具栏面板
         val toolbarPanel = JPanel()
-        toolbarPanel.layout = BoxLayout(toolbarPanel, BoxLayout.X_AXIS)
+        toolbarPanel.layout = BoxLayout(toolbarPanel, BoxLayout.Y_AXIS)
         toolbarPanel.border = javax.swing.BorderFactory.createEmptyBorder(5, 0, 5, 0)
 
-        toolbarPanel.add(checkAllButton)
-        toolbarPanel.add(Box.createHorizontalStrut(10))
-        toolbarPanel.add(uncheckAllButton)
-        toolbarPanel.add(Box.createHorizontalStrut(10))
-        toolbarPanel.add(scanButton)
-        toolbarPanel.add(Box.createHorizontalStrut(10))
-        toolbarPanel.add(refreshButton)
-        toolbarPanel.add(Box.createHorizontalStrut(10))
-        toolbarPanel.add(configButton)
-        toolbarPanel.add(Box.createHorizontalGlue())
-        toolbarPanel.add(uploadButton)
+        // 第一行：主按钮和高级操作切换按钮
+        val mainButtonPanel = JPanel()
+        mainButtonPanel.layout = BoxLayout(mainButtonPanel, BoxLayout.X_AXIS)
+        mainButtonPanel.add(oneClickButton)
+        mainButtonPanel.add(Box.createHorizontalStrut(10))
+        mainButtonPanel.add(advancedToggleButton)
+        mainButtonPanel.add(Box.createHorizontalGlue())
+
+        toolbarPanel.add(mainButtonPanel)
+        toolbarPanel.add(Box.createVerticalStrut(5))
+        toolbarPanel.add(advancedPanel)
 
         return toolbarPanel
     }
@@ -179,6 +210,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
      * 统一管理按钮启用/禁用状态
      */
     private fun setButtonsEnabled(enabled: Boolean) {
+        oneClickButton.isEnabled = enabled
+        advancedToggleButton.isEnabled = enabled
         checkAllButton.isEnabled = enabled
         uncheckAllButton.isEnabled = enabled
         scanButton.isEnabled = enabled
@@ -329,6 +362,98 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
      */
     private fun recheckRepositoryStatus() {
         checkRepositoryStatus()
+    }
+
+    /**
+     * 一键扫描并检查缺失依赖
+     * 执行流程：扫描 Maven 依赖 → 检查私仓存在性 → 展示缺失依赖（并默认勾选）
+     */
+    private fun oneClickScanAndCheck() {
+        if (!uploadService.isMavenProject(project)) {
+            Messages.showErrorDialog(
+                project,
+                "当前项目不是Maven项目，无法使用此功能",
+                "错误"
+            )
+            return
+        }
+
+        // 更新项目信息
+        val projectInfo = uploadService.getMavenProjectInfo(project)
+        projectInfoLabel.text = projectInfo
+
+        // 加载配置
+        config = PrivateRepoConfigurable.getConfig()
+        val currentConfig = config
+        if (currentConfig == null || !currentConfig.enabled || !currentConfig.isValid()) {
+            Messages.showWarningDialog(
+                project,
+                "私仓配置不完整，无法检查依赖状态。请先配置私仓设置。",
+                "配置错误"
+            )
+            return
+        }
+
+        updateStatus("正在扫描并检查依赖…")
+        setButtonsEnabled(false)
+
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "一键扫描并检查缺失依赖", true) {
+            override fun run(indicator: ProgressIndicator) {
+                try {
+                    // 第一步：扫描 Maven 依赖
+                    indicator.isIndeterminate = true
+                    indicator.text = "正在扫描 Maven 依赖…"
+                    
+                    val analyzer = com.maven.privateuploader.analyzer.MavenDependencyAnalyzer(project)
+                    val deps = analyzer.analyzeDependencies(indicator)
+
+                    ApplicationManager.getApplication().invokeLater {
+                        updateTableData(deps, "扫描完成，共发现 ${deps.size} 个依赖，正在检查私仓…")
+                    }
+
+                    // 第二步：检查私仓存在性
+                    indicator.text = "正在检查私仓依赖状态…"
+                    val client = PrivateRepositoryClient(currentConfig)
+                    client.checkDependenciesExist(deps.toMutableList(), indicator)
+
+                    // 第三步：自动勾选缺失的依赖
+                    deps.forEach { dep ->
+                        if (dep.checkStatus == CheckStatus.MISSING) {
+                            dep.selected = true
+                        } else {
+                            dep.selected = false
+                        }
+                    }
+
+                    ApplicationManager.getApplication().invokeLater {
+                        val missingCount = deps.count { it.checkStatus == CheckStatus.MISSING }
+                        val existsCount = deps.count { it.checkStatus == CheckStatus.EXISTS }
+                        val errorCount = deps.count { it.checkStatus == CheckStatus.ERROR }
+                        val selectedCount = deps.count { it.selected }
+                        
+                        updateTableData(deps, "检查完成：缺失 $missingCount 个（已自动勾选 $selectedCount 个），已存在 $existsCount 个")
+                        setButtonsEnabled(true)
+                    }
+                } catch (e: Exception) {
+                    logger.error("一键扫描并检查时发生错误", e)
+                    ApplicationManager.getApplication().invokeLater {
+                        updateStatus("操作失败: ${e.message}")
+                        setButtonsEnabled(true)
+                    }
+                }
+            }
+        })
+    }
+
+    /**
+     * 切换高级操作面板的显示/隐藏
+     */
+    private fun toggleAdvancedOptions() {
+        advancedPanel.isVisible = !advancedPanel.isVisible
+        advancedToggleButton.text = if (advancedPanel.isVisible) "高级操作 ▲" else "高级操作 ▼"
+        // 重新布局
+        advancedPanel.parent?.revalidate()
+        advancedPanel.parent?.repaint()
     }
 
     /**
