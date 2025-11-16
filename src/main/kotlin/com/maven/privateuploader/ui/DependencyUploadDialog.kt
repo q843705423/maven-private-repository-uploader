@@ -43,6 +43,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private lateinit var projectInfoLabel: JBLabel
     private lateinit var repoStatusLabel: JBLabel
     private lateinit var buttonAreaWarningLabel: JBLabel
+    private lateinit var goToConfigButton: JButton
     private lateinit var checkAllButton: JButton
     private lateinit var uncheckAllButton: JButton
     private lateinit var scanButton: JButton
@@ -150,6 +151,21 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         repoStatusLabel = JBLabel()
         repoStatusLabel.border = JBUI.Borders.empty(5, 0, 5, 0)
 
+        // 创建"去配置"按钮，当配置缺失时显示
+        goToConfigButton = JButton("⚙ 去配置")
+        goToConfigButton.addActionListener { openSettings() }
+        // 设置按钮样式，使其更醒目
+        goToConfigButton.font = goToConfigButton.font.deriveFont(java.awt.Font.BOLD)
+        goToConfigButton.foreground = Color.WHITE
+        goToConfigButton.background = Color(0, 120, 215) // IntelliJ IDEA 主题蓝色
+        goToConfigButton.isOpaque = true
+        goToConfigButton.border = javax.swing.BorderFactory.createCompoundBorder(
+            javax.swing.BorderFactory.createLineBorder(Color(0, 100, 180)),
+            javax.swing.BorderFactory.createEmptyBorder(8, 20, 8, 20)
+        )
+        goToConfigButton.isFocusPainted = false
+        goToConfigButton.preferredSize = Dimension(120, 35)
+
         val panel = JPanel(BorderLayout())
         panel.add(repoStatusLabel, BorderLayout.CENTER)
         panel.border = javax.swing.BorderFactory.createCompoundBorder(
@@ -177,11 +193,35 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
             if (::buttonAreaWarningLabel.isInitialized) {
                 buttonAreaWarningLabel.isVisible = false
             }
+            // 隐藏"去配置"按钮
+            if (::goToConfigButton.isInitialized) {
+                goToConfigButton.isVisible = false
+                // 从面板中移除按钮
+                val panel = repoStatusLabel.parent as? JPanel
+                panel?.remove(goToConfigButton)
+                panel?.revalidate()
+                panel?.repaint()
+            }
         } else {
             repoStatusLabel.text = "<html><b>当前仓库：</b>未配置<br><b>状态：</b><span style='color:red;'>配置缺失</span></html>"
             // 显示按钮区的警告
             if (::buttonAreaWarningLabel.isInitialized) {
                 buttonAreaWarningLabel.isVisible = true
+            }
+            // 显示"去配置"按钮（在状态标签右侧）
+            if (::goToConfigButton.isInitialized) {
+                val panel = repoStatusLabel.parent as? JPanel
+                if (panel != null && !panel.components.contains(goToConfigButton)) {
+                    // 使用 BorderLayout，将按钮放在右侧
+                    panel.add(goToConfigButton, BorderLayout.EAST)
+                    goToConfigButton.isVisible = true
+                    panel.revalidate()
+                    panel.repaint()
+                } else if (panel != null) {
+                    goToConfigButton.isVisible = true
+                    panel.revalidate()
+                    panel.repaint()
+                }
             }
         }
     }
