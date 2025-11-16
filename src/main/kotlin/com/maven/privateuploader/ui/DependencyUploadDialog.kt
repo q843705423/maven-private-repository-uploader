@@ -10,8 +10,11 @@ import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBTextField
 import javax.swing.JTable
 import com.intellij.util.ui.JBUI
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
 import com.maven.privateuploader.client.PrivateRepositoryClient
 import com.maven.privateuploader.config.PrivateRepoConfigurable
 import com.maven.privateuploader.model.CheckStatus
@@ -47,6 +50,14 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private lateinit var oneClickButton: JButton
     private lateinit var advancedToggleButton: JButton
     private lateinit var advancedPanel: JPanel
+    
+    // 过滤和搜索组件
+    private lateinit var filterPanel: JPanel
+    private lateinit var searchTextField: JBTextField
+    private lateinit var filterAllButton: JButton
+    private lateinit var filterMissingButton: JButton
+    private lateinit var filterErrorButton: JButton
+    private lateinit var filterExistsButton: JButton
 
     private var dependencies: List<DependencyInfo> = emptyList()
     private var config: RepositoryConfig? = null
@@ -86,6 +97,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         // 项目信息面板
         val projectInfoPanel = createProjectInfoPanel()
 
+        // 过滤和搜索面板
+        val filterSearchPanel = createFilterSearchPanel()
+
         // 工具栏面板
         val toolbarPanel = createToolbarPanel()
 
@@ -100,9 +114,10 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         val mainPanel = JPanel(BorderLayout(0, JBUI.scale(5)))
         mainPanel.border = JBUI.Borders.empty(10)
 
-        // 将项目信息和工具栏放在一个垂直面板中
+        // 将项目信息、过滤搜索和工具栏放在一个垂直面板中
         val topPanel = JPanel(BorderLayout())
         topPanel.add(projectInfoPanel, BorderLayout.NORTH)
+        topPanel.add(filterSearchPanel, BorderLayout.CENTER)
         topPanel.add(toolbarPanel, BorderLayout.SOUTH)
         mainPanel.add(topPanel, BorderLayout.NORTH)
 
@@ -129,6 +144,136 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         )
 
         return panel
+    }
+
+    private fun createFilterSearchPanel(): JPanel {
+        filterPanel = JPanel()
+        filterPanel.layout = BoxLayout(filterPanel, BoxLayout.X_AXIS)
+        filterPanel.border = javax.swing.BorderFactory.createEmptyBorder(5, 0, 5, 0)
+
+        // 搜索框
+        val searchLabel = JBLabel("搜索:")
+        searchTextField = JBTextField()
+        searchTextField.toolTipText = "输入 artifactId、groupId 或 version 进行过滤"
+        searchTextField.preferredSize = Dimension(300, searchTextField.preferredSize.height)
+        searchTextField.maximumSize = Dimension(300, searchTextField.preferredSize.height)
+        
+        // 搜索框文本变化监听
+        searchTextField.document.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(e: DocumentEvent?) {
+                applySearchFilter()
+            }
+            override fun removeUpdate(e: DocumentEvent?) {
+                applySearchFilter()
+            }
+            override fun changedUpdate(e: DocumentEvent?) {
+                applySearchFilter()
+            }
+        })
+
+        // 过滤标签按钮
+        filterAllButton = JButton("全部")
+        filterAllButton.isSelected = true
+        filterAllButton.addActionListener { 
+            setFilterType(DependencyTableModel.FilterType.ALL)
+            updateFilterButtons(filterAllButton)
+        }
+
+        filterMissingButton = JButton("只看缺失")
+        filterMissingButton.toolTipText = "显示私仓缺失或本地缺失的依赖"
+        filterMissingButton.addActionListener { 
+            setFilterType(DependencyTableModel.FilterType.MISSING_ONLY)
+            updateFilterButtons(filterMissingButton)
+        }
+
+        filterErrorButton = JButton("只看错误")
+        filterErrorButton.toolTipText = "显示检查出错的依赖"
+        filterErrorButton.addActionListener { 
+            setFilterType(DependencyTableModel.FilterType.ERROR_ONLY)
+            updateFilterButtons(filterErrorButton)
+        }
+
+        filterExistsButton = JButton("只看已存在")
+        filterExistsButton.toolTipText = "显示已存在于私仓的依赖"
+        filterExistsButton.addActionListener { 
+            setFilterType(DependencyTableModel.FilterType.EXISTS_ONLY)
+            updateFilterButtons(filterExistsButton)
+        }
+
+        // 设置按钮样式（切换按钮样式）
+        val filterButtons = listOf(filterAllButton, filterMissingButton, filterErrorButton, filterExistsButton)
+        filterButtons.forEach { button ->
+            button.isFocusPainted = false
+            button.border = javax.swing.BorderFactory.createCompoundBorder(
+                javax.swing.BorderFactory.createLineBorder(java.awt.Color.GRAY),
+                javax.swing.BorderFactory.createEmptyBorder(5, 10, 5, 10)
+            )
+        }
+
+        // 添加到面板
+        filterPanel.add(searchLabel)
+        filterPanel.add(Box.createHorizontalStrut(5))
+        filterPanel.add(searchTextField)
+        filterPanel.add(Box.createHorizontalStrut(15))
+        filterPanel.add(filterAllButton)
+        filterPanel.add(Box.createHorizontalStrut(5))
+        filterPanel.add(filterMissingButton)
+        filterPanel.add(Box.createHorizontalStrut(5))
+        filterPanel.add(filterErrorButton)
+        filterPanel.add(Box.createHorizontalStrut(5))
+        filterPanel.add(filterExistsButton)
+        filterPanel.add(Box.createHorizontalGlue())
+
+        return filterPanel
+    }
+
+    /**
+     * 设置过滤类型
+     */
+    private fun setFilterType(filterType: DependencyTableModel.FilterType) {
+        tableModel.setFilterType(filterType)
+        updateStatusWithCounts()
+    }
+
+    /**
+     * 应用搜索过滤
+     */
+    private fun applySearchFilter() {
+        val searchText = searchTextField.text
+        tableModel.setSearchText(searchText)
+        updateStatusWithCounts()
+    }
+
+    /**
+     * 更新过滤按钮的选中状态
+     */
+    private fun updateFilterButtons(selectedButton: JButton) {
+        val buttons = listOf(filterAllButton, filterMissingButton, filterErrorButton, filterExistsButton)
+        buttons.forEach { button ->
+            if (button == selectedButton) {
+                button.isSelected = true
+                button.background = java.awt.Color(200, 220, 255) // 浅蓝色背景
+            } else {
+                button.isSelected = false
+                button.background = null // 默认背景
+            }
+        }
+    }
+
+    /**
+     * 更新状态栏，显示过滤后的数量
+     */
+    private fun updateStatusWithCounts() {
+        val total = tableModel.getTotalCount()
+        val filtered = tableModel.getFilteredCount()
+        val selected = tableModel.getSelectedCount()
+        
+        val statusText = if (filtered < total) {
+            "显示 $filtered / $total 个依赖（已选中 $selected 个）"
+        } else {
+            "共 $total 个依赖（已选中 $selected 个）"
+        }
+        updateStatus(statusText)
     }
 
     private fun createToolbarPanel(): JPanel {
@@ -372,8 +517,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         
         logger.info("表格数据已更新，行数: ${tableModel.rowCount}")
         
-        // 更新状态
-        updateStatus(statusMessage)
+        // 更新状态（显示过滤后的数量）
+        updateStatusWithCounts()
     }
 
     /**
@@ -495,6 +640,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
      */
     private fun selectAllDependencies(selected: Boolean) {
         tableModel.setAllSelected(selected)
+        updateStatusWithCounts()
     }
 
 

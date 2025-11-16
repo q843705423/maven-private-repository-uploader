@@ -17,7 +17,22 @@ import javax.swing.table.DefaultTableCellRenderer
  */
 class DependencyTableModel : AbstractTableModel() {
 
-    private var dependencies: List<DependencyInfo> = mutableListOf()
+    private var allDependencies: List<DependencyInfo> = mutableListOf()
+    private var filteredDependencies: List<DependencyInfo> = mutableListOf()
+    
+    // 过滤和搜索条件
+    private var filterType: FilterType = FilterType.ALL
+    private var searchText: String = ""
+    
+    /**
+     * 过滤类型枚举
+     */
+    enum class FilterType {
+        ALL,           // 显示全部
+        MISSING_ONLY,  // 只看缺失（包括私仓缺失和本地缺失）
+        ERROR_ONLY,    // 只看错误
+        EXISTS_ONLY    // 只看已存在
+    }
 
     /**
      * 列名
@@ -30,7 +45,7 @@ class DependencyTableModel : AbstractTableModel() {
      * 行数
      */
     override fun getRowCount(): Int {
-        return dependencies.size
+        return filteredDependencies.size
     }
 
     /**
@@ -46,11 +61,11 @@ class DependencyTableModel : AbstractTableModel() {
     override fun getValueAt(rowIndex: Int, columnIndex: Int): Any {
         val column = DependencyTableColumn.getByIndex(columnIndex) ?: return ""
         
-        if (rowIndex < 0 || rowIndex >= dependencies.size) {
+        if (rowIndex < 0 || rowIndex >= filteredDependencies.size) {
             return column.defaultValue
         }
         
-        val dependency = dependencies[rowIndex]
+        val dependency = filteredDependencies[rowIndex]
         return column.valueExtractor(dependency)
     }
 
@@ -73,9 +88,10 @@ class DependencyTableModel : AbstractTableModel() {
      */
     override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
         val column = DependencyTableColumn.getByIndex(columnIndex)
-        if (column == DependencyTableColumn.SELECTED && rowIndex >= 0 && rowIndex < dependencies.size) {
-            // 更新选择状态
-            dependencies[rowIndex].selected = value as? Boolean ?: false
+        if (column == DependencyTableColumn.SELECTED && rowIndex >= 0 && rowIndex < filteredDependencies.size) {
+            // 更新选择状态（需要更新原始数据）
+            val dependency = filteredDependencies[rowIndex]
+            dependency.selected = value as? Boolean ?: false
             fireTableCellUpdated(rowIndex, columnIndex)
         }
     }
@@ -92,8 +108,58 @@ class DependencyTableModel : AbstractTableModel() {
         } else {
             dependencies
         }
-        this.dependencies = sortedDeps.toMutableList()
-        // 使用fireTableDataChanged()通知所有监听器数据已更改
+        this.allDependencies = sortedDeps.toMutableList()
+        applyFilters()
+    }
+    
+    /**
+     * 设置过滤类型
+     */
+    fun setFilterType(filterType: FilterType) {
+        this.filterType = filterType
+        applyFilters()
+    }
+    
+    /**
+     * 设置搜索文本
+     */
+    fun setSearchText(text: String) {
+        this.searchText = text.trim()
+        applyFilters()
+    }
+    
+    /**
+     * 应用过滤和搜索条件
+     */
+    private fun applyFilters() {
+        var result = allDependencies
+        
+        // 应用过滤类型
+        result = when (filterType) {
+            FilterType.ALL -> result
+            FilterType.MISSING_ONLY -> result.filter { 
+                // 缺失：私仓缺失或本地缺失
+                it.checkStatus == CheckStatus.MISSING || !it.isLocalFileExists()
+            }
+            FilterType.ERROR_ONLY -> result.filter { 
+                it.checkStatus == CheckStatus.ERROR 
+            }
+            FilterType.EXISTS_ONLY -> result.filter { 
+                it.checkStatus == CheckStatus.EXISTS 
+            }
+        }
+        
+        // 应用搜索文本
+        if (searchText.isNotEmpty()) {
+            val searchLower = searchText.lowercase()
+            result = result.filter { dep ->
+                dep.groupId.lowercase().contains(searchLower) ||
+                dep.artifactId.lowercase().contains(searchLower) ||
+                dep.version.lowercase().contains(searchLower)
+            }
+        }
+        
+        filteredDependencies = result
         fireTableDataChanged()
     }
 
@@ -101,23 +167,30 @@ class DependencyTableModel : AbstractTableModel() {
      * 获取指定行的依赖信息
      */
     fun getDependencyAt(rowIndex: Int): DependencyInfo? {
-        return if (rowIndex >= 0 && rowIndex < dependencies.size) {
-            dependencies[rowIndex]
+        return if (rowIndex >= 0 && rowIndex < filteredDependencies.size) {
+            filteredDependencies[rowIndex]
         } else null
     }
 
     /**
-     * 获取所有依赖
+     * 获取所有依赖（包括未过滤的）
      */
     fun getDependencies(): List<DependencyInfo> {
-        return dependencies.toList()
+        return allDependencies.toList()
+    }
+    
+    /**
+     * 获取过滤后的依赖
+     */
+    fun getFilteredDependencies(): List<DependencyInfo> {
+        return filteredDependencies.toList()
     }
 
     /**
-     * 设置所有行的选择状态
+     * 设置所有行的选择状态（仅对过滤后的依赖）
      */
     fun setAllSelected(selected: Boolean) {
-        dependencies.forEach { it.selected = selected }
+        filteredDependencies.forEach { it.selected = selected }
         fireTableDataChanged()
     }
 
@@ -125,24 +198,38 @@ class DependencyTableModel : AbstractTableModel() {
      * 切换指定行的选择状态
      */
     fun toggleSelection(rowIndex: Int) {
-        if (rowIndex >= 0 && rowIndex < dependencies.size) {
-            dependencies[rowIndex].selected = !dependencies[rowIndex].selected
+        if (rowIndex >= 0 && rowIndex < filteredDependencies.size) {
+            filteredDependencies[rowIndex].selected = !filteredDependencies[rowIndex].selected
             fireTableRowsUpdated(rowIndex, rowIndex)
         }
     }
 
     /**
-     * 获取选中的依赖
+     * 获取选中的依赖（从所有依赖中获取，不限于过滤后的）
      */
     fun getSelectedDependencies(): List<DependencyInfo> {
-        return dependencies.filter { it.selected }
+        return allDependencies.filter { it.selected }
     }
 
     /**
-     * 获取选中依赖的数量
+     * 获取选中依赖的数量（从所有依赖中统计）
      */
     fun getSelectedCount(): Int {
-        return dependencies.count { it.selected }
+        return allDependencies.count { it.selected }
+    }
+    
+    /**
+     * 获取当前过滤后的数量
+     */
+    fun getFilteredCount(): Int {
+        return filteredDependencies.size
+    }
+    
+    /**
+     * 获取总数
+     */
+    fun getTotalCount(): Int {
+        return allDependencies.size
     }
 
     companion object {
@@ -210,9 +297,17 @@ class DependencyTableModel : AbstractTableModel() {
                 }
             }
 
-            // 设置其他列的默认渲染器
-            val defaultRenderer = DefaultTableCellRenderer()
-            table.setDefaultRenderer(String::class.java, defaultRenderer)
+            // 设置其他列的默认渲染器（带颜色区分）
+            // 为没有特殊渲染器的列设置行颜色渲染器
+            DependencyTableColumn.allColumns.forEachIndexed { index, column ->
+                val tableColumn = table.columnModel.getColumn(index)
+                // 如果该列没有设置特殊渲染器，则使用行颜色渲染器
+                if (column != DependencyTableColumn.STATUS && 
+                    column != DependencyTableColumn.LOCAL_PATH &&
+                    column != DependencyTableColumn.SELECTED) {
+                    tableColumn.cellRenderer = RowColorRenderer()
+                }
+            }
 
             // 设置行高
             table.rowHeight = 24
@@ -235,13 +330,16 @@ class DependencyTableModel : AbstractTableModel() {
             row: Int,
             column: Int
         ) {
+            val model = table.model as? DependencyTableModel
+            val dependency = model?.getDependencyAt(row)
+            
             if (value is CheckStatus) {
                 when (value) {
                     CheckStatus.EXISTS -> {
                         append("私仓-已存在", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.GREEN))
                     }
                     CheckStatus.MISSING -> {
-                        append("私仓-缺失", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.RED))
+                        append("私仓-缺失", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.YELLOW.darker()))
                     }
                     CheckStatus.CHECKING -> {
                         append("私仓-检查中", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.ORANGE))
@@ -250,9 +348,52 @@ class DependencyTableModel : AbstractTableModel() {
                         append("私仓-错误", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.RED))
                     }
                     CheckStatus.UNKNOWN -> {
-                        append("未检查", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.GRAY))
+                        // 如果本地文件也不存在，显示为缺失状态
+                        val isLocalMissing = dependency != null && !dependency.isLocalFileExists()
+                        if (isLocalMissing) {
+                            append("未检查（本地缺失）", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.YELLOW.darker()))
+                        } else {
+                            append("未检查", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, java.awt.Color.GRAY))
+                        }
                     }
                 }
+            } else {
+                append(value?.toString() ?: "", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+            }
+        }
+    }
+    
+    /**
+     * 行颜色渲染器
+     * 根据依赖状态为整行设置文字颜色
+     */
+    private class RowColorRenderer : ColoredTableCellRenderer() {
+        
+        override fun customizeCellRenderer(
+            table: JTable,
+            value: Any?,
+            selected: Boolean,
+            hasFocus: Boolean,
+            row: Int,
+            column: Int
+        ) {
+            val model = table.model as? DependencyTableModel
+            val dependency = model?.getDependencyAt(row)
+            
+            if (dependency != null) {
+                // 判断是否为缺失状态（私仓缺失或本地缺失）
+                val isMissing = dependency.checkStatus == CheckStatus.MISSING || !dependency.isLocalFileExists()
+                val isError = dependency.checkStatus == CheckStatus.ERROR
+                val isExists = dependency.checkStatus == CheckStatus.EXISTS
+                
+                val textColor = when {
+                    isError -> java.awt.Color.RED
+                    isMissing -> java.awt.Color(200, 150, 0) // 黄色（深一点，更易读）
+                    isExists -> java.awt.Color(100, 150, 100) // 绿色（深一点，更易读）
+                    else -> java.awt.Color.GRAY
+                }
+                
+                append(value?.toString() ?: "", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, textColor))
             } else {
                 append(value?.toString() ?: "", SimpleTextAttributes.REGULAR_ATTRIBUTES)
             }
