@@ -349,7 +349,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
                             return@forEach
                         }
                         
-                        val transitiveDependency = pomParser.transitiveToDependencyInfo(transitive)
+                        val transitiveDependency = pomParser.dependencyToDependencyInfo(transitive)
                         if (transitiveDependency != null) {
                             val transitiveKey = "${transitiveDependency.groupId}:${transitiveDependency.artifactId}:${transitiveDependency.version}"
                             
@@ -674,7 +674,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
     /**
      * 分析BOM依赖（递归处理BOM及其父POM和子BOM）
      * 
-     * @param bomDependencies BOM依赖列表
+     * @param bomDependencies BOM依赖列表（直接使用 Maven 的 Dependency 对象）
      * @param dependencies 依赖集合
      * @param analyzedParents 已分析的父POM集合（用于避免循环依赖）
      * @param pomParser POM解析器
@@ -682,7 +682,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
      * @param bomDepth BOM的深度（用于判断插件优先级，默认从1开始）
      */
     private fun analyzeBomDependencies(
-        bomDependencies: List<PomParser.BomDependency>,
+        bomDependencies: List<org.apache.maven.model.Dependency>,
         dependencies: MutableSet<DependencyInfo>,
         analyzedParents: MutableSet<String>,
         pomParser: PomParser,
@@ -786,13 +786,13 @@ class MavenDependencyAnalyzer(private val project: Project) {
      * 分析插件依赖
      * 支持版本替换：如果已存在同一插件的不同版本，用高优先级的版本替换低优先级的版本
      * 
-     * @param plugins 插件列表
+     * @param plugins 插件列表（直接使用 Maven 的 Plugin 对象）
      * @param dependencies 依赖集合（使用 Map 来支持版本替换）
      * @param pomParser POM解析器
      * @param origin 插件来源信息（用于判断优先级）
      */
     private fun analyzePlugins(
-        plugins: List<PomParser.PluginDependency>,
+        plugins: List<org.apache.maven.model.Plugin>,
         dependencies: MutableMap<String, Pair<DependencyInfo, PluginOrigin>>,
         pomParser: PomParser,
         origin: PluginOrigin

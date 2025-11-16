@@ -14,8 +14,8 @@ import java.io.FileReader
  * POM 解析器
  * 用于解析 POM 文件并提取父 POM 和 BOM 依赖信息
  * 
- * 已改造为使用 Maven 官方的 maven-model-builder 来构建有效 POM，
- * 保证和 Maven CLI 构建行为一致。
+ * 使用 Maven 官方的 maven-model-builder 来构建有效 POM，
+ * 直接使用 Maven 解析好的 Model 对象，避免不必要的中间转换。
  */
 class PomParser {
     
@@ -24,15 +24,16 @@ class PomParser {
     
     /**
      * POM 信息数据类
+     * 直接使用 Maven 官方的 Dependency 和 Plugin 对象，避免不必要的转换
      */
     data class PomInfo(
         val groupId: String?,
         val artifactId: String?,
         val version: String?,
         val parent: ParentInfo?,
-        val bomDependencies: List<BomDependency>,
-        val dependencies: List<TransitiveDependency>,
-        val plugins: List<PluginDependency>,
+        val bomDependencies: List<Dependency>,  // 直接使用 Maven 的 Dependency
+        val dependencies: List<Dependency>,      // 直接使用 Maven 的 Dependency
+        val plugins: List<Plugin>,               // 直接使用 Maven 的 Plugin
         val properties: Map<String, String>
     )
     
@@ -44,35 +45,6 @@ class PomParser {
         val artifactId: String,
         val version: String,
         val relativePath: String?
-    )
-    
-    /**
-     * BOM 依赖信息（dependencyManagement 中 scope=import 的依赖）
-     */
-    data class BomDependency(
-        val groupId: String,
-        val artifactId: String,
-        val version: String
-    )
-    
-    /**
-     * 传递依赖信息（dependencies 中的普通依赖）
-     */
-    data class TransitiveDependency(
-        val groupId: String,
-        val artifactId: String,
-        val version: String?,
-        val scope: String?,
-        val type: String?
-    )
-    
-    /**
-     * Maven 插件信息（最终解析后的版本）
-     */
-    data class PluginDependency(
-        val groupId: String,
-        val artifactId: String,
-        val version: String
     )
     
     /**
@@ -100,14 +72,14 @@ class PomParser {
             
             if (effectiveModel != null) {
                 // 成功构建有效 POM，使用有效 POM
-                convertModelToPomInfo(effectiveModel, pomFile, parsePlugins)
+                convertModelToPomInfo(effectiveModel, parsePlugins)
             } else {
                 // 构建有效 POM 失败（可能是 parent POM 不在本地仓库），尝试直接读取原始 POM
                 logger.warn("构建有效 POM 失败，尝试直接读取原始 POM 文件: ${pomFile.absolutePath}")
                 val rawModel = readRawPom(pomFile)
                 if (rawModel != null) {
                     // 从原始 POM 中提取基本信息（parent、groupId、artifactId、version 等）
-                    convertRawModelToPomInfo(rawModel, pomFile, parsePlugins)
+                    convertRawModelToPomInfo(rawModel, parsePlugins)
                 } else {
                     logger.error("无法读取原始 POM 文件: ${pomFile.absolutePath}")
                     null
@@ -120,7 +92,7 @@ class PomParser {
                 logger.warn("发生异常后，尝试直接读取原始 POM 文件: ${pomFile.absolutePath}")
                 val rawModel = readRawPom(pomFile)
                 if (rawModel != null) {
-                    convertRawModelToPomInfo(rawModel, pomFile, parsePlugins)
+                    convertRawModelToPomInfo(rawModel, parsePlugins)
                 } else {
                     null
                 }
@@ -151,7 +123,7 @@ class PomParser {
      * 将原始 Model 转换为 PomInfo（不包含有效 POM 的合并信息）
      * 用于在构建有效 POM 失败时，仍然能够提取基本信息
      */
-    private fun convertRawModelToPomInfo(model: Model, pomFile: File, parsePlugins: Boolean): PomInfo {
+    private fun convertRawModelToPomInfo(model: Model, parsePlugins: Boolean): PomInfo {
         // 基本信息（从原始 POM 中提取，不进行属性替换等处理）
         val groupId = model.groupId
         val artifactId = model.artifactId
@@ -166,13 +138,16 @@ class PomParser {
         } ?: emptyMap()
         
         // BOM 依赖（dependencyManagement 中 scope=import 的依赖）
-        // 注意：原始 POM 中的 dependencyManagement 可能包含未解析的属性，但我们仍然尝试提取
-        val bomDependencies = parseBomDependenciesFromModel(model)
+        val bomDependencies = model.dependencyManagement?.dependencies?.filter { dep ->
+            dep.scope == "import" && (dep.type ?: "pom") == "pom" &&
+            !dep.groupId.isNullOrBlank() && !dep.artifactId.isNullOrBlank() && !dep.version.isNullOrBlank() &&
+            !containsUnresolvedPropertyPlaceholder(dep.version)
+        } ?: emptyList()
         
         // 普通依赖（dependencies 中的依赖）
-        // 注意：原始 POM 中的 dependencies 可能包含未解析的属性，但我们仍然尝试提取
-        val dependencies = model.dependencies?.mapNotNull { dep ->
-            convertDependency(dep)
+        val dependencies = model.dependencies?.filter { dep ->
+            !dep.groupId.isNullOrBlank() && !dep.artifactId.isNullOrBlank() &&
+            !containsUnresolvedPropertyPlaceholder(dep.version)
         } ?: emptyList()
         
         // 插件（从原始 POM 中提取，不应用 pluginManagement 和继承）
@@ -202,8 +177,9 @@ class PomParser {
     
     /**
      * 将 Maven Model 转换为 PomInfo
+     * effective model 已经处理完所有继承和属性替换
      */
-    private fun convertModelToPomInfo(model: Model, pomFile: File, parsePlugins: Boolean): PomInfo {
+    private fun convertModelToPomInfo(model: Model, parsePlugins: Boolean): PomInfo {
         // 基本信息（effective model 已经处理完所有继承和属性替换）
         val groupId = model.groupId
         val artifactId = model.artifactId
@@ -218,11 +194,17 @@ class PomParser {
         } ?: emptyMap()
         
         // BOM 依赖（dependencyManagement 中 scope=import 的依赖）
-        val bomDependencies = parseBomDependenciesFromModel(model)
+        // effective model 已经处理了属性替换，但可能仍有未解析的占位符（边界情况）
+        val bomDependencies = model.dependencyManagement?.dependencies?.filter { dep ->
+            dep.scope == "import" && (dep.type ?: "pom") == "pom" &&
+            !dep.groupId.isNullOrBlank() && !dep.artifactId.isNullOrBlank() && !dep.version.isNullOrBlank() &&
+            !containsUnresolvedPropertyPlaceholder(dep.version)
+        } ?: emptyList()
         
         // 普通依赖（dependencies 中的依赖，effective model 已经应用了 dependencyManagement）
-        val dependencies = model.dependencies?.mapNotNull { dep ->
-            convertDependency(dep)
+        val dependencies = model.dependencies?.filter { dep ->
+            !dep.groupId.isNullOrBlank() && !dep.artifactId.isNullOrBlank() &&
+            !containsUnresolvedPropertyPlaceholder(dep.version)
         } ?: emptyList()
         
         // 插件（effective model 已经应用了 pluginManagement 和继承）
@@ -278,116 +260,49 @@ class PomParser {
     }
     
     /**
-     * 从有效 Model 中解析 BOM 依赖（dependencyManagement 中 scope=import 的依赖）
-     */
-    private fun parseBomDependenciesFromModel(model: Model): List<BomDependency> {
-        val bomDependencies = mutableListOf<BomDependency>()
-        
-        model.dependencyManagement?.dependencies?.forEach { dep ->
-            // 检查 scope 是否为 import
-            if (dep.scope == "import") {
-                // 检查 type 是否为 pom（BOM 必须是 pom 类型）
-                val type = dep.type ?: "pom"
-                if (type == "pom") {
-                    val groupId = dep.groupId
-                    val artifactId = dep.artifactId
-                    val version = dep.version
-                    
-                    if (!groupId.isNullOrBlank() && !artifactId.isNullOrBlank() && !version.isNullOrBlank()) {
-                        // 过滤掉包含未解析属性占位符的版本
-                        if (containsUnresolvedPropertyPlaceholder(version)) {
-                            logger.debug("跳过包含未解析属性占位符的 BOM 依赖: $groupId:$artifactId:$version")
-                            return@forEach
-                        }
-                        
-                        bomDependencies.add(
-                            BomDependency(
-                                groupId = groupId,
-                                artifactId = artifactId,
-                                version = version
-                            )
-                        )
-                        logger.debug("发现 BOM 依赖: $groupId:$artifactId:$version")
-                    }
-                }
-            }
-        }
-        
-        return bomDependencies
-    }
-    
-    /**
-     * 转换 Maven Dependency 为 TransitiveDependency
-     */
-    private fun convertDependency(dep: Dependency): TransitiveDependency? {
-        val groupId = dep.groupId
-        val artifactId = dep.artifactId
-        val version = dep.version
-        
-        if (groupId.isNullOrBlank() || artifactId.isNullOrBlank()) {
-            return null
-        }
-        
-        // 如果版本包含未解析的属性占位符，返回 null（跳过该依赖）
-        if (containsUnresolvedPropertyPlaceholder(version)) {
-            logger.debug("跳过包含未解析属性占位符的依赖: $groupId:$artifactId:$version")
-            return null
-        }
-        
-        return TransitiveDependency(
-            groupId = groupId,
-            artifactId = artifactId,
-            version = version,
-            scope = dep.scope,
-            type = dep.type
-        )
-    }
-    
-    /**
      * 从有效 Model 中解析插件
      */
-    private fun parsePluginsFromModel(model: Model): List<PluginDependency> {
-        val plugins = mutableSetOf<PluginDependency>()
+    private fun parsePluginsFromModel(model: Model): List<Plugin> {
+        val plugins = mutableSetOf<Plugin>()
         
         // 解析 build/plugins 中的插件（effective model 已经应用了 pluginManagement 和继承）
         model.build?.plugins?.forEach { plugin ->
-            convertPlugin(plugin)?.let { plugins.add(it) }
+            if (isValidPlugin(plugin)) {
+                plugins.add(plugin)
+            }
         }
         
         // 解析 build/pluginManagement/plugins 中的插件（如果它们被引用但没有在 plugins 中显式声明）
         // 注意：effective model 通常已经将 pluginManagement 中的插件合并到 plugins 中，
         // 但为了完整性，我们也检查一下 pluginManagement
         model.build?.pluginManagement?.plugins?.forEach { plugin ->
-            convertPlugin(plugin)?.let { plugins.add(it) }
+            if (isValidPlugin(plugin)) {
+                plugins.add(plugin)
+            }
         }
         
         return plugins.toList()
     }
     
     /**
-     * 转换 Maven Plugin 为 PluginDependency
+     * 检查插件是否有效（有完整的 artifactId 和 version，且版本不包含未解析的占位符）
      */
-    private fun convertPlugin(plugin: Plugin): PluginDependency? {
-        val groupId = plugin.groupId ?: "org.apache.maven.plugins"
+    private fun isValidPlugin(plugin: Plugin): Boolean {
         val artifactId = plugin.artifactId
         val version = plugin.version
         
         if (artifactId.isNullOrBlank() || version.isNullOrBlank()) {
-            logger.debug("插件信息不完整，跳过: groupId=$groupId, artifactId=$artifactId, version=$version")
-            return null
+            logger.debug("插件信息不完整，跳过: groupId=${plugin.groupId}, artifactId=$artifactId, version=$version")
+            return false
         }
         
-        // 如果版本包含未解析的属性占位符，返回 null（跳过该插件）
+        // 如果版本包含未解析的属性占位符，返回 false（跳过该插件）
         if (containsUnresolvedPropertyPlaceholder(version)) {
-            logger.debug("跳过包含未解析属性占位符的插件: $groupId:$artifactId:$version")
-            return null
+            logger.debug("跳过包含未解析属性占位符的插件: ${plugin.groupId ?: "org.apache.maven.plugins"}:$artifactId:$version")
+            return false
         }
         
-        return PluginDependency(
-            groupId = groupId,
-            artifactId = artifactId,
-            version = version
-        )
+        return true
     }
     
     /**
@@ -441,17 +356,25 @@ class PomParser {
     }
     
     /**
-     * 将 BomDependency 转换为 DependencyInfo
+     * 将 Maven Dependency（BOM）转换为 DependencyInfo
      * 即使本地文件不存在，也会创建 DependencyInfo 对象，以便在列表中显示该依赖
      */
-    fun bomToDependencyInfo(bom: BomDependency): DependencyInfo? {
-        // 如果版本包含未解析的属性占位符，返回 null（跳过该依赖）
-        if (containsUnresolvedPropertyPlaceholder(bom.version)) {
-            logger.debug("跳过包含未解析属性占位符的 BOM: ${bom.groupId}:${bom.artifactId}:${bom.version}")
+    fun bomToDependencyInfo(bom: Dependency): DependencyInfo? {
+        val groupId = bom.groupId
+        val artifactId = bom.artifactId
+        val version = bom.version
+        
+        if (groupId.isNullOrBlank() || artifactId.isNullOrBlank() || version.isNullOrBlank()) {
             return null
         }
         
-        val pomFile = buildLocalPomPath(bom.groupId, bom.artifactId, bom.version)
+        // 如果版本包含未解析的属性占位符，返回 null（跳过该依赖）
+        if (containsUnresolvedPropertyPlaceholder(version)) {
+            logger.debug("跳过包含未解析属性占位符的 BOM: $groupId:$artifactId:$version")
+            return null
+        }
+        
+        val pomFile = buildLocalPomPath(groupId, artifactId, version)
         val localPath = if (pomFile.exists()) {
             pomFile.absolutePath
         } else {
@@ -460,9 +383,9 @@ class PomParser {
         }
         
         return DependencyInfo(
-            groupId = bom.groupId,
-            artifactId = bom.artifactId,
-            version = bom.version,
+            groupId = groupId,
+            artifactId = artifactId,
+            version = version,
             packaging = "pom",
             localPath = localPath,
             checkStatus = com.maven.privateuploader.model.CheckStatus.UNKNOWN,
@@ -472,38 +395,46 @@ class PomParser {
     }
     
     /**
-     * 将 TransitiveDependency 转换为 DependencyInfo
+     * 将 Maven Dependency（传递依赖）转换为 DependencyInfo
      * 即使本地文件不存在，也会创建 DependencyInfo 对象，以便在列表中显示该依赖
      */
-    fun transitiveToDependencyInfo(transitive: TransitiveDependency): DependencyInfo? {
+    fun dependencyToDependencyInfo(dep: Dependency): DependencyInfo? {
+        val groupId = dep.groupId
+        val artifactId = dep.artifactId
+        val version = dep.version
+        
+        if (groupId.isNullOrBlank() || artifactId.isNullOrBlank()) {
+            return null
+        }
+        
         // 如果 version 为空，无法构建路径，返回 null
-        if (transitive.version.isNullOrBlank()) {
-            logger.debug("传递依赖 ${transitive.groupId}:${transitive.artifactId} 没有版本信息，跳过")
+        if (version.isNullOrBlank()) {
+            logger.debug("传递依赖 $groupId:$artifactId 没有版本信息，跳过")
             return null
         }
         
         // 如果版本包含未解析的属性占位符，返回 null（跳过该依赖）
-        if (containsUnresolvedPropertyPlaceholder(transitive.version)) {
-            logger.debug("跳过包含未解析属性占位符的传递依赖: ${transitive.groupId}:${transitive.artifactId}:${transitive.version}")
+        if (containsUnresolvedPropertyPlaceholder(version)) {
+            logger.debug("跳过包含未解析属性占位符的传递依赖: $groupId:$artifactId:$version")
             return null
         }
         
-        val packaging = transitive.type ?: "jar"
+        val packaging = dep.type ?: "jar"
         val localRepoPath = getLocalMavenRepositoryPath()
         
         // 根据 packaging 类型构建文件路径
         val localPath = when (packaging) {
             "pom" -> {
                 val pomFile = File(localRepoPath,
-                    "${transitive.groupId.replace('.', '/')}/${transitive.artifactId}/${transitive.version}/${transitive.artifactId}-${transitive.version}.pom")
+                    "${groupId.replace('.', '/')}/$artifactId/$version/$artifactId-$version.pom")
                 if (pomFile.exists()) pomFile.absolutePath else ""
             }
             else -> {
                 // jar 或其他类型
                 val jarFile = File(localRepoPath,
-                    "${transitive.groupId.replace('.', '/')}/${transitive.artifactId}/${transitive.version}/${transitive.artifactId}-${transitive.version}.jar")
+                    "${groupId.replace('.', '/')}/$artifactId/$version/$artifactId-$version.jar")
                 val pomFile = File(localRepoPath,
-                    "${transitive.groupId.replace('.', '/')}/${transitive.artifactId}/${transitive.version}/${transitive.artifactId}-${transitive.version}.pom")
+                    "${groupId.replace('.', '/')}/$artifactId/$version/$artifactId-$version.pom")
                 when {
                     jarFile.exists() -> jarFile.absolutePath
                     pomFile.exists() -> pomFile.absolutePath
@@ -513,13 +444,13 @@ class PomParser {
         }
         
         if (localPath.isEmpty()) {
-            logger.debug("传递依赖文件不存在: ${transitive.groupId}:${transitive.artifactId}:${transitive.version}")
+            logger.debug("传递依赖文件不存在: $groupId:$artifactId:$version")
         }
         
         return DependencyInfo(
-            groupId = transitive.groupId,
-            artifactId = transitive.artifactId,
-            version = transitive.version,
+            groupId = groupId,
+            artifactId = artifactId,
+            version = version,
             packaging = packaging,
             localPath = localPath,
             checkStatus = com.maven.privateuploader.model.CheckStatus.UNKNOWN,
@@ -529,23 +460,31 @@ class PomParser {
     }
     
     /**
-     * 将 PluginDependency 转换为 DependencyInfo
+     * 将 Maven Plugin 转换为 DependencyInfo
      * Maven 插件的 packaging 是 maven-plugin，但实际文件是 jar
      * 即使本地文件不存在，也会创建 DependencyInfo 对象，以便在列表中显示该依赖
      */
-    fun pluginToDependencyInfo(plugin: PluginDependency): DependencyInfo? {
+    fun pluginToDependencyInfo(plugin: Plugin): DependencyInfo? {
+        val groupId = plugin.groupId ?: "org.apache.maven.plugins"
+        val artifactId = plugin.artifactId
+        val version = plugin.version
+        
+        if (artifactId.isNullOrBlank() || version.isNullOrBlank()) {
+            return null
+        }
+        
         // 如果版本包含未解析的属性占位符，返回 null（跳过该插件）
-        if (containsUnresolvedPropertyPlaceholder(plugin.version)) {
-            logger.debug("跳过包含未解析属性占位符的插件: ${plugin.groupId}:${plugin.artifactId}:${plugin.version}")
+        if (containsUnresolvedPropertyPlaceholder(version)) {
+            logger.debug("跳过包含未解析属性占位符的插件: $groupId:$artifactId:$version")
             return null
         }
         
         // Maven 插件的文件路径：groupId/artifactId/version/artifactId-version.jar
         val localRepoPath = getLocalMavenRepositoryPath()
         val jarFile = File(localRepoPath,
-            "${plugin.groupId.replace('.', '/')}/${plugin.artifactId}/${plugin.version}/${plugin.artifactId}-${plugin.version}.jar")
+            "${groupId.replace('.', '/')}/$artifactId/$version/$artifactId-$version.jar")
         val pomFile = File(localRepoPath,
-            "${plugin.groupId.replace('.', '/')}/${plugin.artifactId}/${plugin.version}/${plugin.artifactId}-${plugin.version}.pom")
+            "${groupId.replace('.', '/')}/$artifactId/$version/$artifactId-$version.pom")
         
         // 优先使用 jar 文件路径，如果不存在则使用 pom 文件路径
         val localPath = when {
@@ -558,9 +497,9 @@ class PomParser {
         }
         
         return DependencyInfo(
-            groupId = plugin.groupId,
-            artifactId = plugin.artifactId,
-            version = plugin.version,
+            groupId = groupId,
+            artifactId = artifactId,
+            version = version,
             packaging = "maven-plugin", // Maven 插件的 packaging 类型
             localPath = localPath,
             checkStatus = com.maven.privateuploader.model.CheckStatus.UNKNOWN,
@@ -569,4 +508,3 @@ class PomParser {
         )
     }
 }
-
