@@ -54,7 +54,7 @@ class PomParser {
     )
     
     /**
-     * Maven 插件信息
+     * Maven 插件信息（最终解析后的版本）
      */
     data class PluginDependency(
         val groupId: String,
@@ -63,12 +63,25 @@ class PomParser {
     )
     
     /**
+     * 原始插件声明（用于继承，保留未解析的版本表达式）
+     */
+    data class RawPluginDecl(
+        val groupId: String?,
+        val artifactId: String,
+        val rawVersionExpr: String?,
+        val sourcePom: File,
+        val depth: Int = 0,
+        val fromPluginManagement: Boolean = false
+    )
+    
+    /**
      * 解析 POM 文件
      *
      * @param pomFile POM 文件路径
+     * @param parsePlugins 是否解析插件（默认 true）。当为 false 时，只解析 properties 等基本信息，不解析插件
      * @return POM 信息，如果解析失败返回 null
      */
-    fun parsePom(pomFile: File): PomInfo? {
+    fun parsePom(pomFile: File, parsePlugins: Boolean = true): PomInfo? {
         if (!pomFile.exists() || !pomFile.isFile) {
             logger.warn("POM 文件不存在: ${pomFile.absolutePath}")
             return null
@@ -122,33 +135,36 @@ class PomParser {
             // 解析 BOM 依赖（需要应用属性解析）
             val bomDependencies = parseBomDependencies(document, namespaceURI, allProperties)
             
-            // 解析父 POM 的插件列表（用于继承）
-            val parentPlugins = if (resolvedParent != null) {
-                val parentPomFile = buildLocalPomPath(resolvedParent.groupId, resolvedParent.artifactId, resolvedParent.version)
-                if (parentPomFile.exists() && parentPomFile.isFile) {
-                    try {
-                        val parentPomInfo = parsePom(parentPomFile)
-                        val plugins = parentPomInfo?.plugins ?: emptyList()
-                        logger.info("【插件解析】父 POM ${resolvedParent.groupId}:${resolvedParent.artifactId}:${resolvedParent.version} 包含 ${plugins.size} 个插件")
-                        plugins.forEach { plugin ->
-                            logger.info("【插件解析】父 POM 插件: ${plugin.groupId}:${plugin.artifactId}:${plugin.version}")
+            // 解析 Maven 插件（需要应用属性解析，并继承父 POM 的插件）
+            val plugins = if (parsePlugins) {
+                // 解析父 POM 的原始插件声明（只读取 groupId/artifactId/rawVersionExpr，不解析版本）
+                val parentRawPlugins = if (resolvedParent != null) {
+                    val parentPomFile = buildLocalPomPath(resolvedParent.groupId, resolvedParent.artifactId, resolvedParent.version)
+                    if (parentPomFile.exists() && parentPomFile.isFile) {
+                        try {
+                            val rawPlugins = parseParentPluginsForInheritance(parentPomFile, 1)
+                            logger.info("【插件解析】父 POM ${resolvedParent.groupId}:${resolvedParent.artifactId}:${resolvedParent.version} 包含 ${rawPlugins.size} 个原始插件声明")
+                            rawPlugins.forEach { plugin ->
+                                logger.info("【插件解析】父 POM 原始插件: ${plugin.groupId ?: "org.apache.maven.plugins"}:${plugin.artifactId}, versionExpr=${plugin.rawVersionExpr ?: "未指定"}")
+                            }
+                            rawPlugins
+                        } catch (e: Exception) {
+                            logger.warn("解析父 POM 插件时发生错误: ${parentPomFile.absolutePath}", e)
+                            emptyList()
                         }
-                        plugins
-                    } catch (e: Exception) {
-                        logger.warn("解析父 POM 插件时发生错误: ${parentPomFile.absolutePath}", e)
+                    } else {
+                        logger.info("【插件解析】父 POM 文件不存在: ${parentPomFile.absolutePath}")
                         emptyList()
                     }
                 } else {
-                    logger.info("【插件解析】父 POM 文件不存在: ${parentPomFile.absolutePath}")
                     emptyList()
                 }
+                
+                logger.info("【插件解析】开始解析当前 POM 的插件，父 POM 原始插件数量: ${parentRawPlugins.size}，当前 properties 数量: ${allProperties.size}")
+                parsePlugins(document, namespaceURI, allProperties, parentRawPlugins)
             } else {
                 emptyList()
             }
-            
-            // 解析 Maven 插件（需要应用属性解析，并继承父 POM 的插件）
-            logger.info("【插件解析】开始解析当前 POM 的插件，父 POM 插件数量: ${parentPlugins.size}，当前 properties 数量: ${allProperties.size}")
-            val plugins = parsePlugins(document, namespaceURI, allProperties, parentPlugins)
             logger.info("【插件解析】解析完成，共 ${plugins.size} 个插件")
             
             PomInfo(
@@ -245,7 +261,8 @@ class PomParser {
         }
         
         try {
-            val parentPomInfo = parsePom(parentPomFile)
+            // 只解析 properties，不解析插件，避免过早解析版本
+            val parentPomInfo = parsePom(parentPomFile, parsePlugins = false)
             if (parentPomInfo != null) {
                 // 合并属性：子 POM 的属性优先级更高（符合 Maven 规则）
                 val merged = mutableMapOf<String, String>()
@@ -363,10 +380,99 @@ class PomParser {
     }
     
     /**
+     * 解析父 POM 的原始插件声明（用于继承）
+     * 只读取 groupId/artifactId/rawVersionExpr，不解析版本表达式
+     */
+    private fun parseParentPluginsForInheritance(parentPomFile: File, depth: Int): List<RawPluginDecl> {
+        val rawPlugins = mutableListOf<RawPluginDecl>()
+        
+        try {
+            val document = documentBuilder.parse(parentPomFile)
+            document.documentElement.normalize()
+            
+            val namespaceURI = document.documentElement.namespaceURI
+            
+            // 查找 build 节点
+            val buildNode = getElementByTagName(document, "build", namespaceURI) as? Element
+            if (buildNode == null) {
+                return rawPlugins
+            }
+            
+            // 解析 build/plugins 中的插件
+            val pluginsNode = getElementByTagName(buildNode, "plugins", namespaceURI) as? Element
+            if (pluginsNode != null) {
+                val pluginNodeList = getElementsByTagName(pluginsNode, "plugin", namespaceURI)
+                for (i in 0 until pluginNodeList.length) {
+                    val pluginNode = pluginNodeList.item(i) as? Element
+                        ?: continue
+                    parseRawPluginNode(pluginNode, namespaceURI, parentPomFile, depth, fromPluginManagement = false, rawPlugins)
+                }
+            }
+            
+            // 解析 build/pluginManagement/plugins 中的插件
+            val pluginManagementNode = getElementByTagName(buildNode, "pluginManagement", namespaceURI) as? Element
+            if (pluginManagementNode != null) {
+                val pluginManagementPluginsNode = getElementByTagName(pluginManagementNode, "plugins", namespaceURI) as? Element
+                if (pluginManagementPluginsNode != null) {
+                    val pluginNodeList = getElementsByTagName(pluginManagementPluginsNode, "plugin", namespaceURI)
+                    for (i in 0 until pluginNodeList.length) {
+                        val pluginNode = pluginNodeList.item(i) as? Element
+                            ?: continue
+                        parseRawPluginNode(pluginNode, namespaceURI, parentPomFile, depth, fromPluginManagement = true, rawPlugins)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn("解析父 POM 原始插件声明时发生错误: ${parentPomFile.absolutePath}", e)
+        }
+        
+        return rawPlugins
+    }
+    
+    /**
+     * 解析单个原始插件节点（只读取原始值，不解析属性）
+     */
+    private fun parseRawPluginNode(
+        pluginNode: Element,
+        namespaceURI: String?,
+        sourcePom: File,
+        depth: Int,
+        fromPluginManagement: Boolean,
+        rawPlugins: MutableList<RawPluginDecl>
+    ) {
+        try {
+            // 只读取原始文本，不做属性解析
+            var rawGroupId = getElementText(pluginNode, "groupId", namespaceURI)
+            val rawArtifactId = getElementText(pluginNode, "artifactId", namespaceURI)
+            val rawVersionExpr = getElementText(pluginNode, "version", namespaceURI)
+            
+            if (rawArtifactId.isNullOrBlank()) {
+                return
+            }
+            
+            // 如果 groupId 为空，使用默认值（但这里保留为 null，后续处理时再决定）
+            rawPlugins.add(
+                RawPluginDecl(
+                    groupId = rawGroupId,
+                    artifactId = rawArtifactId,
+                    rawVersionExpr = rawVersionExpr,
+                    sourcePom = sourcePom,
+                    depth = depth,
+                    fromPluginManagement = fromPluginManagement
+                )
+            )
+            
+            logger.debug("【原始插件声明】解析到: ${rawGroupId ?: "org.apache.maven.plugins"}:$rawArtifactId, versionExpr=${rawVersionExpr ?: "未指定"}, depth=$depth, fromPluginManagement=$fromPluginManagement")
+        } catch (e: Exception) {
+            logger.warn("解析原始插件节点时发生错误", e)
+        }
+    }
+    
+    /**
      * 解析 Maven 插件（build/plugins 和 build/pluginManagement/plugins）
      * 如果父 POM 中定义了插件但子 POM 中没有显式定义，会继承父 POM 的插件配置，但使用子 POM 的 properties 来解析版本
      */
-    private fun parsePlugins(document: Document, namespaceURI: String?, properties: Map<String, String>, parentPlugins: List<PluginDependency> = emptyList()): List<PluginDependency> {
+    private fun parsePlugins(document: Document, namespaceURI: String?, properties: Map<String, String>, parentRawPlugins: List<RawPluginDecl> = emptyList()): List<PluginDependency> {
         val plugins = mutableListOf<PluginDependency>()
         
         try {
@@ -375,7 +481,7 @@ class PomParser {
             if (buildNode == null) {
                 // 如果没有 build 节点，只继承父 POM 的插件
                 logger.info("【插件解析】当前 POM 没有 build 节点，只继承父 POM 的插件")
-                inheritParentPlugins(parentPlugins, properties, plugins)
+                inheritParentRawPlugins(parentRawPlugins, properties, plugins)
                 return plugins
             }
             
@@ -408,7 +514,7 @@ class PomParser {
             
             // 继承父 POM 的插件（如果子 POM 中没有显式定义）
             logger.info("【插件解析】开始继承父 POM 的插件，当前已解析 ${plugins.size} 个插件")
-            inheritParentPlugins(parentPlugins, properties, plugins)
+            inheritParentRawPlugins(parentRawPlugins, properties, plugins)
         } catch (e: Exception) {
             logger.warn("解析 Maven 插件时发生错误", e)
         }
@@ -417,38 +523,46 @@ class PomParser {
     }
     
     /**
-     * 继承父 POM 的插件配置
-     * 对于父 POM 中定义的插件，如果子 POM 中没有显式定义，则从子 POM 的 properties 中查找版本并添加
+     * 继承父 POM 的原始插件声明
+     * 使用 effective properties（已合并父+子）来解析版本表达式
      */
-    private fun inheritParentPlugins(parentPlugins: List<PluginDependency>, properties: Map<String, String>, plugins: MutableList<PluginDependency>) {
-        parentPlugins.forEach { parentPlugin ->
+    private fun inheritParentRawPlugins(parentRawPlugins: List<RawPluginDecl>, effectiveProperties: Map<String, String>, plugins: MutableList<PluginDependency>) {
+        parentRawPlugins.forEach { parentRawPlugin ->
+            val groupId = parentRawPlugin.groupId ?: "org.apache.maven.plugins"
+            
             // 检查子 POM 中是否已经定义了相同的插件（通过 groupId 和 artifactId 判断）
             val alreadyDefined = plugins.any { 
-                it.groupId == parentPlugin.groupId && it.artifactId == parentPlugin.artifactId 
+                it.groupId == groupId && it.artifactId == parentRawPlugin.artifactId 
             }
             
             if (alreadyDefined) {
-                logger.info("【插件继承】插件 ${parentPlugin.groupId}:${parentPlugin.artifactId} 已在子 POM 中定义，跳过继承")
-            } else {
-                // 子 POM 中没有显式定义，继承父 POM 的插件配置
-                // 优先使用子 POM 的 properties 来解析版本，如果找不到则使用父 POM 的版本
-                logger.info("【插件继承】尝试继承父 POM 插件: ${parentPlugin.groupId}:${parentPlugin.artifactId}，父 POM 版本: ${parentPlugin.version}，从子 POM properties 中查找版本")
-                val versionFromProperties = findPluginVersionFromProperties(parentPlugin.groupId, parentPlugin.artifactId, properties)
-                val finalVersion = versionFromProperties ?: parentPlugin.version  // 如果子 POM 的 properties 中没有，使用父 POM 的版本
-                
-                if (finalVersion.isNotBlank()) {
-                    plugins.add(
-                        PluginDependency(
-                            groupId = parentPlugin.groupId,
-                            artifactId = parentPlugin.artifactId,
-                            version = finalVersion
-                        )
-                    )
-                    logger.info("【插件继承】继承父 POM 的插件: ${parentPlugin.groupId}:${parentPlugin.artifactId}:$finalVersion (${if (versionFromProperties != null) "使用子 POM properties 中的版本" else "使用父 POM 版本"})")
-                } else {
-                    logger.warn("【插件继承】无法确定插件版本: ${parentPlugin.groupId}:${parentPlugin.artifactId}")
-                }
+                logger.info("【插件继承】插件 $groupId:${parentRawPlugin.artifactId} 已在子 POM 中定义，跳过继承")
+                return@forEach
             }
+            
+            // 子 POM 中没有显式定义，继承父 POM 的插件配置
+            // 使用 effective properties（已合并父+子，子覆盖父）来解析版本
+            logger.info("【插件继承】尝试继承父 POM 插件: $groupId:${parentRawPlugin.artifactId}，原始 versionExpr=${parentRawPlugin.rawVersionExpr ?: "未指定"}，使用 effective properties 解析版本")
+            
+            // 优先从 properties 中查找版本（支持 ${maven-jar-plugin.version} 这种格式）
+            val versionFromProperties = findPluginVersionFromProperties(groupId, parentRawPlugin.artifactId, effectiveProperties)
+            
+            // 如果 properties 中没有，尝试解析原始版本表达式
+            val finalVersion = versionFromProperties ?: resolveProperties(parentRawPlugin.rawVersionExpr, effectiveProperties)
+            
+            if (finalVersion.isNullOrBlank()) {
+                logger.warn("【插件继承】无法确定插件版本: $groupId:${parentRawPlugin.artifactId} (versionExpr=${parentRawPlugin.rawVersionExpr ?: "未指定"})")
+                return@forEach
+            }
+            
+            plugins.add(
+                PluginDependency(
+                    groupId = groupId,
+                    artifactId = parentRawPlugin.artifactId,
+                    version = finalVersion
+                )
+            )
+            logger.info("【插件继承】继承父 POM 的插件: $groupId:${parentRawPlugin.artifactId}:$finalVersion (${if (versionFromProperties != null) "从 properties 中找到" else if (parentRawPlugin.rawVersionExpr != null) "解析版本表达式" else "使用默认"})")
         }
     }
     

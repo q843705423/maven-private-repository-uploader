@@ -1,0 +1,120 @@
+2025-11-17 04:22:55,432 [  89228]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,433 [  89229]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,438 [  89234]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,438 [  89234]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,439 [  89235]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2
+2025-11-17 04:22:55,439 [  89235]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】插件 org.apache.maven.plugins:maven-jar-plugin 没有显式指定 version，从 properties 中查找
+2025-11-17 04:22:55,439 [  89235]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,439 [  89235]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】从 properties 中找到插件版本（格式2）: maven-jar-plugin.version = 3.2.2
+2025-11-17 04:22:55,439 [  89235]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=3.2.2)
+2025-11-17 04:22:55,439 [  89235]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】插件 org.apache.maven.plugins:maven-jar-plugin 没有显式指定 version，从 properties 中查找
+2025-11-17 04:22:55,439 [  89235]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,439 [  89235]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】从 properties 中找到插件版本（格式2）: maven-jar-plugin.version = 3.2.2
+2025-11-17 04:22:55,439 [  89235]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=3.2.2)
+2025-11-17 04:22:55,440 [  89236]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】插件 org.apache.maven.plugins:maven-jar-plugin 已在子 POM 中定义，跳过继承
+2025-11-17 04:22:55,445 [  89241]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,446 [  89242]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,457 [  89253]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,458 [  89254]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,461 [  89257]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,462 [  89258]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,463 [  89259]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0
+2025-11-17 04:22:55,464 [  89260]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】尝试继承父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0，从子 POM properties 中查找版本
+2025-11-17 04:22:55,464 [  89260]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,464 [  89260]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】未在 properties 中找到插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin (尝试了 org.apache.maven.plugins:maven-jar-plugin.version, maven-jar-plugin.version, plugin.maven-jar-plugin.version)
+2025-11-17 04:22:55,465 [  89261]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】继承父 POM 的插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (使用父 POM 版本)
+2025-11-17 04:22:55,469 [  89265]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,471 [  89267]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,474 [  89270]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,475 [  89271]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,476 [  89272]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0
+2025-11-17 04:22:55,488 [  89284]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】尝试继承父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0，从子 POM properties 中查找版本
+2025-11-17 04:22:55,489 [  89285]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,489 [  89285]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】未在 properties 中找到插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin (尝试了 org.apache.maven.plugins:maven-jar-plugin.version, maven-jar-plugin.version, plugin.maven-jar-plugin.version)
+2025-11-17 04:22:55,489 [  89285]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】继承父 POM 的插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (使用父 POM 版本)
+2025-11-17 04:22:55,489 [  89285]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0
+2025-11-17 04:22:55,490 [  89286]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】尝试继承父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0，从子 POM properties 中查找版本
+2025-11-17 04:22:55,490 [  89286]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,490 [  89286]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】未在 properties 中找到插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin (尝试了 org.apache.maven.plugins:maven-jar-plugin.version, maven-jar-plugin.version, plugin.maven-jar-plugin.version)
+2025-11-17 04:22:55,490 [  89286]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】继承父 POM 的插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (使用父 POM 版本)
+2025-11-17 04:22:55,496 [  89292]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,497 [  89293]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,501 [  89297]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,502 [  89298]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,503 [  89299]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0
+2025-11-17 04:22:55,504 [  89300]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】尝试继承父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0，从子 POM properties 中查找版本
+2025-11-17 04:22:55,504 [  89300]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,504 [  89300]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】未在 properties 中找到插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin (尝试了 org.apache.maven.plugins:maven-jar-plugin.version, maven-jar-plugin.version, plugin.maven-jar-plugin.version)
+2025-11-17 04:22:55,504 [  89300]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】继承父 POM 的插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (使用父 POM 版本)
+2025-11-17 04:22:55,508 [  89304]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,509 [  89305]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (原始 version=${version.jar.plugin})
+2025-11-17 04:22:55,515 [  89311]   WARN - #com.maven.privateuploader.analyzer.PomParser - 插件文件不存在: C:\Users\admin\.m2\repository\org\apache\maven\plugins\maven-jar-plugin\3.1.0\maven-jar-plugin-3.1.0.jar，但仍会添加到依赖列表中
+2025-11-17 04:22:55,515 [  89311]   INFO - #com.maven.privateuploader.analyzer.MavenDependencyAnalyzer - 【插件分析】添加插件: org.apache.maven.plugins:maven-jar-plugin:3.1.0 (本地文件不存在)
+2025-11-17 04:22:55,557 [  89353]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,558 [  89354]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,560 [  89356]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,561 [  89357]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,561 [  89357]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0
+2025-11-17 04:22:55,562 [  89358]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】尝试继承父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0，从子 POM properties 中查找版本
+2025-11-17 04:22:55,562 [  89358]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,562 [  89358]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】未在 properties 中找到插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin (尝试了 org.apache.maven.plugins:maven-jar-plugin.version, maven-jar-plugin.version, plugin.maven-jar-plugin.version)
+2025-11-17 04:22:55,562 [  89358]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】继承父 POM 的插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (使用父 POM 版本)
+2025-11-17 04:22:55,564 [  89360]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,565 [  89361]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,567 [  89363]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,567 [  89363]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,568 [  89364]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0
+2025-11-17 04:22:55,568 [  89364]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】尝试继承父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0，从子 POM properties 中查找版本
+2025-11-17 04:22:55,568 [  89364]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,568 [  89364]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】未在 properties 中找到插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin (尝试了 org.apache.maven.plugins:maven-jar-plugin.version, maven-jar-plugin.version, plugin.maven-jar-plugin.version)
+2025-11-17 04:22:55,568 [  89364]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】继承父 POM 的插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (使用父 POM 版本)
+2025-11-17 04:22:55,569 [  89365]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0
+2025-11-17 04:22:55,570 [  89366]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】尝试继承父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0，从子 POM properties 中查找版本
+2025-11-17 04:22:55,570 [  89366]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,570 [  89366]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】未在 properties 中找到插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin (尝试了 org.apache.maven.plugins:maven-jar-plugin.version, maven-jar-plugin.version, plugin.maven-jar-plugin.version)
+2025-11-17 04:22:55,570 [  89366]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】继承父 POM 的插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (使用父 POM 版本)
+2025-11-17 04:22:55,573 [  89369]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,574 [  89370]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,576 [  89372]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,577 [  89373]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,577 [  89373]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0
+2025-11-17 04:22:55,578 [  89374]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】尝试继承父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0，从子 POM properties 中查找版本
+2025-11-17 04:22:55,578 [  89374]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,578 [  89374]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】未在 properties 中找到插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin (尝试了 org.apache.maven.plugins:maven-jar-plugin.version, maven-jar-plugin.version, plugin.maven-jar-plugin.version)
+2025-11-17 04:22:55,578 [  89374]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】继承父 POM 的插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (使用父 POM 版本)
+2025-11-17 04:22:55,580 [  89376]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,581 [  89377]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.0 (原始 version=3.2.0)
+2025-11-17 04:22:55,584 [  89380]   WARN - #com.maven.privateuploader.analyzer.PomParser - 插件文件不存在: C:\Users\admin\.m2\repository\org\apache\maven\plugins\maven-jar-plugin\3.2.0\maven-jar-plugin-3.2.0.jar，但仍会添加到依赖列表中
+2025-11-17 04:22:55,624 [  89420]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,625 [  89421]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,630 [  89426]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,630 [  89426]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,631 [  89427]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2
+2025-11-17 04:22:55,631 [  89427]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】插件 org.apache.maven.plugins:maven-jar-plugin 没有显式指定 version，从 properties 中查找
+2025-11-17 04:22:55,631 [  89427]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,631 [  89427]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】从 properties 中找到插件版本（格式2）: maven-jar-plugin.version = 3.2.2
+2025-11-17 04:22:55,631 [  89427]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=3.2.2)
+2025-11-17 04:22:55,631 [  89427]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】插件 org.apache.maven.plugins:maven-jar-plugin 没有显式指定 version，从 properties 中查找
+2025-11-17 04:22:55,631 [  89427]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,631 [  89427]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】从 properties 中找到插件版本（格式2）: maven-jar-plugin.version = 3.2.2
+2025-11-17 04:22:55,631 [  89427]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=3.2.2)
+2025-11-17 04:22:55,632 [  89428]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】插件 org.apache.maven.plugins:maven-jar-plugin 已在子 POM 中定义，跳过继承
+2025-11-17 04:22:55,637 [  89433]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,638 [  89434]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,643 [  89439]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,643 [  89439]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=${maven-jar-plugin.version})
+2025-11-17 04:22:55,644 [  89440]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2
+2025-11-17 04:22:55,644 [  89440]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】插件 org.apache.maven.plugins:maven-jar-plugin 没有显式指定 version，从 properties 中查找
+2025-11-17 04:22:55,644 [  89440]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,644 [  89440]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】从 properties 中找到插件版本（格式2）: maven-jar-plugin.version = 3.2.2
+2025-11-17 04:22:55,644 [  89440]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=3.2.2)
+2025-11-17 04:22:55,644 [  89440]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】插件 org.apache.maven.plugins:maven-jar-plugin 没有显式指定 version，从 properties 中查找
+2025-11-17 04:22:55,644 [  89440]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,644 [  89440]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】从 properties 中找到插件版本（格式2）: maven-jar-plugin.version = 3.2.2
+2025-11-17 04:22:55,644 [  89440]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】解析到插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2 (原始 version=3.2.2)
+2025-11-17 04:22:55,645 [  89441]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】插件 org.apache.maven.plugins:maven-jar-plugin 已在子 POM 中定义，跳过继承
+2025-11-17 04:22:55,645 [  89441]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件解析】父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2
+2025-11-17 04:22:55,646 [  89442]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】尝试继承父 POM 插件: org.apache.maven.plugins:maven-jar-plugin:3.2.2，从子 POM properties 中查找版本
+2025-11-17 04:22:55,646 [  89442]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】查找插件版本: groupId=org.apache.maven.plugins, artifactId=maven-jar-plugin
+2025-11-17 04:22:55,646 [  89442]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件版本查找】从 properties 中找到插件版本（格式2）: maven-jar-plugin.version = 3.1.1
+2025-11-17 04:22:55,646 [  89442]   INFO - #com.maven.privateuploader.analyzer.PomParser - 【插件继承】继承父 POM 的插件: org.apache.maven.plugins:maven-jar-plugin:3.1.1 (使用子 POM properties 中的版本)

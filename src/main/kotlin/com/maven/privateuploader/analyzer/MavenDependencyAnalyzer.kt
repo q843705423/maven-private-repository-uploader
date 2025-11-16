@@ -30,6 +30,9 @@ class MavenDependencyAnalyzer(private val project: Project) {
         logger.info("【Maven依赖分析】开始分析Maven依赖...")
         logger.info("=========================================")
 
+        // 使用 Map 来存储插件依赖，支持版本替换
+        // key: "groupId:artifactId", value: Pair<DependencyInfo, PluginOrigin>
+        val pluginDependencies = mutableMapOf<String, Pair<DependencyInfo, PluginOrigin>>()
         val dependencies = mutableSetOf<DependencyInfo>()
 
         // 等待Maven项目完全加载（最多等待5秒，每次等待100ms）
@@ -75,14 +78,19 @@ class MavenDependencyAnalyzer(private val project: Project) {
             logger.info("处理Maven项目 (${index + 1}/$totalProjects): ${mavenProject.displayName}")
 
             // 分析项目依赖
-            analyzeProjectDependencies(mavenProject, dependencies)
+            analyzeProjectDependencies(mavenProject, dependencies, pluginDependencies)
         }
 
         progressIndicator?.fraction = 1.0
         progressIndicator?.text2 = "依赖分析完成"
 
+        // 将插件依赖添加到最终依赖列表（只添加最终版本，已处理版本替换）
+        pluginDependencies.values.forEach { (dep, _) ->
+            dependencies.add(dep)
+        }
+
         logger.info("=========================================")
-        logger.info("【Maven依赖分析】依赖分析完成，共发现 ${dependencies.size} 个依赖")
+        logger.info("【Maven依赖分析】依赖分析完成，共发现 ${dependencies.size} 个依赖（其中 ${pluginDependencies.size} 个插件依赖）")
         logger.info("=========================================")
 
         // 记录最终找到的依赖列表（前20个）
@@ -99,7 +107,11 @@ class MavenDependencyAnalyzer(private val project: Project) {
     /**
      * 分析单个Maven项目的依赖
      */
-    private fun analyzeProjectDependencies(mavenProject: MavenProject, dependencies: MutableSet<DependencyInfo>) {
+    private fun analyzeProjectDependencies(
+        mavenProject: MavenProject,
+        dependencies: MutableSet<DependencyInfo>,
+        pluginDependencies: MutableMap<String, Pair<DependencyInfo, PluginOrigin>>
+    ) {
         try {
             logger.info("开始分析项目: ${mavenProject.displayName}")
             logger.info("项目路径: ${mavenProject.directory}")
@@ -111,7 +123,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
             logger.info("【父POM分析】开始分析父POM链...")
             try {
                 val analyzedParents = mutableSetOf<String>() // 用于避免循环依赖
-                analyzeParentPomRecursive(mavenProject, dependencies, analyzedParents)
+                analyzeParentPomRecursive(mavenProject, dependencies, analyzedParents, pluginDependencies)
                 logger.info("【父POM分析】父POM分析完成，当前依赖数: ${dependencies.size}")
             } catch (e: Exception) {
                 logger.error("【父POM分析】分析父POM时发生异常，继续分析其他依赖", e)
@@ -152,8 +164,9 @@ class MavenDependencyAnalyzer(private val project: Project) {
                         val pomInfo = pomParser.parsePom(pomFile)
                         if (pomInfo != null && pomInfo.plugins.isNotEmpty()) {
                             logger.info("【插件分析】当前项目包含 ${pomInfo.plugins.size} 个插件，开始分析")
-                            analyzePlugins(pomInfo.plugins, dependencies, pomParser)
-                            logger.info("【插件分析】当前项目插件分析完成，当前总依赖数: ${dependencies.size}")
+                            // 当前POM的插件优先级最高（depth=0, fromCurrentPom=true）
+                            analyzePlugins(pomInfo.plugins, pluginDependencies, pomParser, PluginOrigin(depth = 0, fromCurrentPom = true))
+                            logger.info("【插件分析】当前项目插件分析完成，当前插件依赖数: ${pluginDependencies.size}")
                         } else {
                             logger.debug("【插件分析】当前项目没有插件或解析失败")
                         }
@@ -296,11 +309,13 @@ class MavenDependencyAnalyzer(private val project: Project) {
      * @param mavenProject Maven项目
      * @param dependencies 依赖集合
      * @param analyzedParents 已分析的父POM集合（用于避免循环依赖）
+     * @param pluginDependencies 插件依赖集合（用于版本替换）
      */
     private fun analyzeParentPomRecursive(
         mavenProject: MavenProject,
         dependencies: MutableSet<DependencyInfo>,
-        analyzedParents: MutableSet<String>
+        analyzedParents: MutableSet<String>,
+        pluginDependencies: MutableMap<String, Pair<DependencyInfo, PluginOrigin>>
     ) {
         try {
             // 获取父POM信息
@@ -361,7 +376,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
                                 
                                 // 如果本地文件存在，继续递归分析
                                 if (parentParentDependency.localPath.isNotEmpty()) {
-                                    analyzeParentPomFromFile(parentParentDependency.localPath, dependencies, analyzedParents)
+                                    analyzeParentPomFromFile(parentParentDependency.localPath, dependencies, analyzedParents, pluginDependencies)
                                 } else {
                                     logger.info("【父POM分析】父POM ${parentParentDependency.getGAV()} 本地文件不存在，无法继续递归分析")
                                 }
@@ -372,7 +387,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
                             // 处理父POM中的BOM依赖
                             if (pomInfo.bomDependencies.isNotEmpty()) {
                                 logger.info("【BOM分析】父POM ${parentDependency.getGAV()} 包含 ${pomInfo.bomDependencies.size} 个BOM依赖，开始分析")
-                                analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
+                                analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser, pluginDependencies, bomDepth = 1)
                             }
                             
                             // 不处理父POM中的插件
@@ -401,11 +416,13 @@ class MavenDependencyAnalyzer(private val project: Project) {
      * @param pomFilePath POM文件路径
      * @param dependencies 依赖集合
      * @param analyzedParents 已分析的父POM集合（用于避免循环依赖）
+     * @param pluginDependencies 插件依赖集合（用于版本替换）
      */
     private fun analyzeParentPomFromFile(
         pomFilePath: String,
         dependencies: MutableSet<DependencyInfo>,
-        analyzedParents: MutableSet<String>
+        analyzedParents: MutableSet<String>,
+        pluginDependencies: MutableMap<String, Pair<DependencyInfo, PluginOrigin>>
     ) {
         try {
             val pomFile = File(pomFilePath)
@@ -466,7 +483,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
                 
                 // 如果本地文件存在，继续递归分析
                 if (parentDependency.localPath.isNotEmpty()) {
-                    analyzeParentPomFromFile(parentDependency.localPath, dependencies, analyzedParents)
+                    analyzeParentPomFromFile(parentDependency.localPath, dependencies, analyzedParents, pluginDependencies)
                 } else {
                     logger.info("【父POM分析】父POM ${parentDependency.getGAV()} 本地文件不存在，无法继续递归分析")
                 }
@@ -477,7 +494,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
             // 处理当前POM中的BOM依赖
             if (pomInfo.bomDependencies.isNotEmpty()) {
                 logger.info("【BOM分析】POM ${currentKey} 包含 ${pomInfo.bomDependencies.size} 个BOM依赖，开始分析")
-                analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
+                analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser, pluginDependencies, bomDepth = 1)
             }
             
             // 不处理当前POM中的插件（因为这是递归解析父 POM 链的方法）
@@ -495,12 +512,16 @@ class MavenDependencyAnalyzer(private val project: Project) {
      * @param dependencies 依赖集合
      * @param analyzedParents 已分析的父POM集合（用于避免循环依赖）
      * @param pomParser POM解析器
+     * @param pluginDependencies 插件依赖集合（用于版本替换）
+     * @param bomDepth BOM的深度（用于判断插件优先级，默认从1开始）
      */
     private fun analyzeBomDependencies(
         bomDependencies: List<PomParser.BomDependency>,
         dependencies: MutableSet<DependencyInfo>,
         analyzedParents: MutableSet<String>,
-        pomParser: PomParser
+        pomParser: PomParser,
+        pluginDependencies: MutableMap<String, Pair<DependencyInfo, PluginOrigin>>,
+        bomDepth: Int = 1
     ) {
         bomDependencies.forEach { bom ->
             try {
@@ -538,20 +559,20 @@ class MavenDependencyAnalyzer(private val project: Project) {
                                 
                                 // 如果本地文件存在，继续递归分析
                                 if (bomParentDependency.localPath.isNotEmpty()) {
-                                    analyzeParentPomFromFile(bomParentDependency.localPath, dependencies, analyzedParents)
+                                    analyzeParentPomFromFile(bomParentDependency.localPath, dependencies, analyzedParents, pluginDependencies)
                                 }
                             }
                             
                             // 递归分析BOM中的子BOM依赖
                             if (bomPomInfo.bomDependencies.isNotEmpty()) {
                                 logger.info("【BOM分析】BOM ${bomDependency.getGAV()} 包含 ${bomPomInfo.bomDependencies.size} 个子BOM依赖，开始递归分析")
-                                analyzeBomDependencies(bomPomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
+                                analyzeBomDependencies(bomPomInfo.bomDependencies, dependencies, analyzedParents, pomParser, pluginDependencies, bomDepth + 1)
                             }
                             
-                            // 处理BOM中的插件
+                            // 处理BOM中的插件（BOM的插件优先级较低，depth=bomDepth+1, fromCurrentPom=false）
                             if (bomPomInfo.plugins.isNotEmpty()) {
                                 logger.info("【插件分析】BOM ${bomDependency.getGAV()} 包含 ${bomPomInfo.plugins.size} 个插件，开始分析")
-                                analyzePlugins(bomPomInfo.plugins, dependencies, pomParser)
+                                analyzePlugins(bomPomInfo.plugins, pluginDependencies, pomParser, PluginOrigin(depth = bomDepth + 1, fromCurrentPom = false))
                             }
                         }
                     }
@@ -565,49 +586,72 @@ class MavenDependencyAnalyzer(private val project: Project) {
     }
     
     /**
+     * 插件来源信息（用于判断优先级）
+     */
+    private data class PluginOrigin(
+        val depth: Int,  // 0=当前POM，1=父POM，2=祖父POM...
+        val fromCurrentPom: Boolean  // 是否来自当前POM（而非父POM链）
+    ) {
+        /**
+         * 判断当前来源是否比另一个来源优先级更高
+         * 规则：当前POM > 父POM，depth 越小优先级越高
+         */
+        fun betterThan(other: PluginOrigin): Boolean {
+            // 当前POM的插件优先级高于父POM链的插件
+            if (this.fromCurrentPom != other.fromCurrentPom) {
+                return this.fromCurrentPom && !other.fromCurrentPom
+            }
+            // 同一类型，depth 越小（离当前POM越近）优先级越高
+            return this.depth < other.depth
+        }
+    }
+    
+    /**
      * 分析插件依赖
+     * 支持版本替换：如果已存在同一插件的不同版本，用高优先级的版本替换低优先级的版本
      * 
      * @param plugins 插件列表
-     * @param dependencies 依赖集合
+     * @param dependencies 依赖集合（使用 Map 来支持版本替换）
      * @param pomParser POM解析器
+     * @param origin 插件来源信息（用于判断优先级）
      */
     private fun analyzePlugins(
         plugins: List<PomParser.PluginDependency>,
-        dependencies: MutableSet<DependencyInfo>,
-        pomParser: PomParser
+        dependencies: MutableMap<String, Pair<DependencyInfo, PluginOrigin>>,
+        pomParser: PomParser,
+        origin: PluginOrigin
     ) {
         plugins.forEach { plugin ->
             try {
                 val pluginDependency = pomParser.pluginToDependencyInfo(plugin)
-                val pluginKey = "${pluginDependency.groupId}:${pluginDependency.artifactId}:${pluginDependency.version}"
+                val pluginKey = "${pluginDependency.groupId}:${pluginDependency.artifactId}"
                 
-                // 检查是否已经添加过相同版本的插件（避免重复）
-                if (dependencies.any { 
-                    it.groupId == pluginDependency.groupId && 
-                    it.artifactId == pluginDependency.artifactId && 
-                    it.version == pluginDependency.version 
-                }) {
-                    logger.debug("【插件分析】插件 $pluginKey 已存在，跳过重复")
-                    return@forEach
+                // 检查是否已经存在同一插件
+                val existing = dependencies[pluginKey]
+                
+                if (existing != null) {
+                    val (existingDep, existingOrigin) = existing
+                    
+                    // 如果版本相同，跳过
+                    if (existingDep.version == pluginDependency.version) {
+                        logger.debug("【插件分析】插件 $pluginKey:${pluginDependency.version} 已存在，跳过重复")
+                        return@forEach
+                    }
+                    
+                    // 版本不同，判断优先级
+                    if (origin.betterThan(existingOrigin)) {
+                        // 新插件的优先级更高，替换旧版本
+                        dependencies[pluginKey] = pluginDependency to origin
+                        logger.info("【插件分析】插件 $pluginKey 版本替换: ${existingDep.version} -> ${pluginDependency.version} (新版本优先级更高: depth=${origin.depth}, fromCurrentPom=${origin.fromCurrentPom})")
+                    } else {
+                        // 已存在版本的优先级更高，保留旧版本
+                        logger.debug("【插件分析】插件 $pluginKey 已存在版本 ${existingDep.version}，跳过新版本 ${pluginDependency.version} (已存在版本优先级更高: depth=${existingOrigin.depth}, fromCurrentPom=${existingOrigin.fromCurrentPom})")
+                    }
+                } else {
+                    // 不存在，直接添加
+                    dependencies[pluginKey] = pluginDependency to origin
+                    logger.info("【插件分析】添加插件: ${pluginDependency.getGAV()} (本地文件${if (pluginDependency.localPath.isEmpty()) "不存在" else "存在"})")
                 }
-                
-                // 检查是否已经存在同一个插件的不同版本
-                // 根据 Maven 规则，子 POM 的配置会覆盖父 POM 的配置
-                // 由于递归解析时子 POM 的插件会先被添加，所以如果已存在同一插件，说明是子 POM 的版本，应该保留子 POM 的版本
-                val existingPlugin = dependencies.find { 
-                    it.groupId == pluginDependency.groupId && 
-                    it.artifactId == pluginDependency.artifactId
-                }
-                
-                if (existingPlugin != null) {
-                    // 已存在同一插件的不同版本，保留已存在的版本（子 POM 的版本）
-                    logger.debug("【插件分析】插件 ${pluginDependency.groupId}:${pluginDependency.artifactId} 已存在版本 ${existingPlugin.version}，跳过新版本 ${pluginDependency.version}（保留子 POM 的版本）")
-                    return@forEach
-                }
-                
-                // 添加插件到依赖列表（即使本地文件不存在）
-                dependencies.add(pluginDependency)
-                logger.info("【插件分析】添加插件: ${pluginDependency.getGAV()} (本地文件${if (pluginDependency.localPath.isEmpty()) "不存在" else "存在"})")
             } catch (e: Exception) {
                 logger.error("【插件分析】分析插件 ${plugin.groupId}:${plugin.artifactId}:${plugin.version} 时发生错误", e)
             }
