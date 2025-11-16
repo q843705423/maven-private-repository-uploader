@@ -583,13 +583,27 @@ class MavenDependencyAnalyzer(private val project: Project) {
                 val pluginDependency = pomParser.pluginToDependencyInfo(plugin)
                 val pluginKey = "${pluginDependency.groupId}:${pluginDependency.artifactId}:${pluginDependency.version}"
                 
-                // 检查是否已经添加过（避免重复）
+                // 检查是否已经添加过相同版本的插件（避免重复）
                 if (dependencies.any { 
                     it.groupId == pluginDependency.groupId && 
                     it.artifactId == pluginDependency.artifactId && 
                     it.version == pluginDependency.version 
                 }) {
                     logger.debug("【插件分析】插件 $pluginKey 已存在，跳过重复")
+                    return@forEach
+                }
+                
+                // 检查是否已经存在同一个插件的不同版本
+                // 根据 Maven 规则，子 POM 的配置会覆盖父 POM 的配置
+                // 由于递归解析时子 POM 的插件会先被添加，所以如果已存在同一插件，说明是子 POM 的版本，应该保留子 POM 的版本
+                val existingPlugin = dependencies.find { 
+                    it.groupId == pluginDependency.groupId && 
+                    it.artifactId == pluginDependency.artifactId
+                }
+                
+                if (existingPlugin != null) {
+                    // 已存在同一插件的不同版本，保留已存在的版本（子 POM 的版本）
+                    logger.debug("【插件分析】插件 ${pluginDependency.groupId}:${pluginDependency.artifactId} 已存在版本 ${existingPlugin.version}，跳过新版本 ${pluginDependency.version}（保留子 POM 的版本）")
                     return@forEach
                 }
                 

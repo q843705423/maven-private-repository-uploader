@@ -201,7 +201,7 @@ class PomParser {
     
     /**
      * 合并父 POM 的属性
-     * 父 POM 的属性会覆盖子 POM 的同名属性
+     * 子 POM 的属性会覆盖父 POM 的同名属性（符合 Maven 规则）
      */
     private fun mergeParentProperties(
         currentProperties: Map<String, String>,
@@ -221,10 +221,10 @@ class PomParser {
         try {
             val parentPomInfo = parsePom(parentPomFile)
             if (parentPomInfo != null) {
-                // 合并属性：父 POM 的属性优先级更高
+                // 合并属性：子 POM 的属性优先级更高（符合 Maven 规则）
                 val merged = mutableMapOf<String, String>()
-                merged.putAll(currentProperties)
-                merged.putAll(parentPomInfo.properties)
+                merged.putAll(parentPomInfo.properties)  // 先添加父 POM 的属性
+                merged.putAll(currentProperties)  // 然后添加子 POM 的属性，会覆盖父 POM 的同名属性
                 logger.debug("合并父 POM 属性: 当前 ${currentProperties.size} 个，父 POM ${parentPomInfo.properties.size} 个，合并后 ${merged.size} 个")
                 return merged
             }
@@ -387,7 +387,7 @@ class PomParser {
             // 注意：插件的 groupId 可能继承自父 POM 或使用默认值 org.apache.maven.plugins
             var rawGroupId = getElementText(pluginNode, "groupId", namespaceURI)
             val rawArtifactId = getElementText(pluginNode, "artifactId", namespaceURI)
-            val rawVersion = getElementText(pluginNode, "version", namespaceURI)
+            var rawVersion = getElementText(pluginNode, "version", namespaceURI)
             
             // 如果 groupId 为空，使用默认值 org.apache.maven.plugins
             if (rawGroupId.isNullOrBlank()) {
@@ -397,6 +397,12 @@ class PomParser {
             // 应用属性解析
             val groupId = resolveProperties(rawGroupId, properties) ?: "org.apache.maven.plugins"
             val artifactId = resolveProperties(rawArtifactId, properties)
+            
+            // 如果插件没有显式指定 version，尝试从 properties 中查找
+            if (rawVersion.isNullOrBlank() && !artifactId.isNullOrBlank()) {
+                rawVersion = findPluginVersionFromProperties(groupId, artifactId, properties)
+            }
+            
             val version = resolveProperties(rawVersion, properties)
             
             if (artifactId.isNullOrBlank() || version.isNullOrBlank()) {
@@ -434,6 +440,39 @@ class PomParser {
         } catch (e: Exception) {
             logger.warn("解析插件节点时发生错误", e)
         }
+    }
+    
+    /**
+     * 从 properties 中查找插件版本
+     * Maven 支持以下格式的属性名：
+     * 1. ${groupId}:${artifactId}.version - 如 org.apache.maven.plugins:maven-jar-plugin.version
+     * 2. ${artifactId}.version - 如 maven-jar-plugin.version
+     * 3. plugin.${artifactId}.version - 某些情况下也可能使用
+     */
+    private fun findPluginVersionFromProperties(groupId: String, artifactId: String, properties: Map<String, String>): String? {
+        // 尝试格式 1: ${groupId}:${artifactId}.version
+        val key1 = "$groupId:$artifactId.version"
+        properties[key1]?.let {
+            logger.debug("从 properties 中找到插件版本（格式1）: $key1 = $it")
+            return it
+        }
+        
+        // 尝试格式 2: ${artifactId}.version
+        val key2 = "$artifactId.version"
+        properties[key2]?.let {
+            logger.debug("从 properties 中找到插件版本（格式2）: $key2 = $it")
+            return it
+        }
+        
+        // 尝试格式 3: plugin.${artifactId}.version
+        val key3 = "plugin.$artifactId.version"
+        properties[key3]?.let {
+            logger.debug("从 properties 中找到插件版本（格式3）: $key3 = $it")
+            return it
+        }
+        
+        logger.debug("未在 properties 中找到插件版本: groupId=$groupId, artifactId=$artifactId")
+        return null
     }
     
     /**
