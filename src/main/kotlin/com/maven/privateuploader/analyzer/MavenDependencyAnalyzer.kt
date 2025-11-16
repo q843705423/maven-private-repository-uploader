@@ -119,10 +119,12 @@ class MavenDependencyAnalyzer(private val project: Project) {
             // 记录项目的基本信息
             logger.info("项目GAV: ${mavenProject.mavenId.groupId}:${mavenProject.mavenId.artifactId}:${mavenProject.mavenId.version}")
 
+            // 创建共享的已分析集合，用于避免循环依赖（父POM和BOM可能共享相同的父POM）
+            val analyzedParents = mutableSetOf<String>()
+
             // 分析父POM（递归分析父POM链）
             logger.info("【父POM分析】开始分析父POM链...")
             try {
-                val analyzedParents = mutableSetOf<String>() // 用于避免循环依赖
                 analyzeParentPomRecursive(mavenProject, dependencies, analyzedParents, pluginDependencies)
                 logger.info("【父POM分析】父POM分析完成，当前依赖数: ${dependencies.size}")
             } catch (e: Exception) {
@@ -153,8 +155,8 @@ class MavenDependencyAnalyzer(private val project: Project) {
             val dependencyCountAfterTree = dependencies.size
             logger.info("【传递依赖分析】传递依赖树分析完成，新增 ${dependencyCountAfterTree - dependencyCountBeforeTree} 个依赖，当前总依赖数: ${dependencies.size}")
 
-            // 分析当前项目的 POM 文件中的插件
-            logger.info("【插件分析】开始分析当前项目的插件，当前依赖数: ${dependencies.size}")
+            // 分析当前项目的 POM 文件中的插件和BOM依赖
+            logger.info("【当前POM分析】开始分析当前项目的POM文件，当前依赖数: ${dependencies.size}")
             try {
                 val pomVirtualFile = mavenProject.file
                 if (pomVirtualFile != null && pomVirtualFile.exists()) {
@@ -163,22 +165,36 @@ class MavenDependencyAnalyzer(private val project: Project) {
                     if (pomFile.exists() && pomFile.isFile) {
                         val pomParser = PomParserHelper()
                         val pomInfo = pomParser.parsePom(pomFile)
-                        if (pomInfo != null && pomInfo.plugins.isNotEmpty()) {
-                            logger.info("【插件分析】当前项目包含 ${pomInfo.plugins.size} 个插件，开始分析")
-                            // 当前POM的插件优先级最高（depth=0, fromCurrentPom=true）
-                            analyzePlugins(pomInfo.plugins, pluginDependencies, pomParser, PluginOrigin(depth = 0, fromCurrentPom = true))
-                            logger.info("【插件分析】当前项目插件分析完成，当前插件依赖数: ${pluginDependencies.size}")
+                        if (pomInfo != null) {
+                            // 分析当前项目的插件
+                            if (pomInfo.plugins.isNotEmpty()) {
+                                logger.info("【插件分析】当前项目包含 ${pomInfo.plugins.size} 个插件，开始分析")
+                                // 当前POM的插件优先级最高（depth=0, fromCurrentPom=true）
+                                analyzePlugins(pomInfo.plugins, pluginDependencies, pomParser, PluginOrigin(depth = 0, fromCurrentPom = true))
+                                logger.info("【插件分析】当前项目插件分析完成，当前插件依赖数: ${pluginDependencies.size}")
+                            } else {
+                                logger.debug("【插件分析】当前项目没有插件")
+                            }
+                            
+                            // 分析当前项目的BOM依赖（使用共享的analyzedParents集合，避免重复分析）
+                            if (pomInfo.bomDependencies.isNotEmpty()) {
+                                logger.info("【BOM分析】当前项目包含 ${pomInfo.bomDependencies.size} 个BOM依赖，开始分析")
+                                analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser, pluginDependencies, bomDepth = 1)
+                                logger.info("【BOM分析】当前项目BOM分析完成，当前总依赖数: ${dependencies.size}")
+                            } else {
+                                logger.debug("【BOM分析】当前项目没有BOM依赖")
+                            }
                         } else {
-                            logger.debug("【插件分析】当前项目没有插件或解析失败")
+                            logger.warn("【当前POM分析】无法解析当前项目的POM文件: ${pomFile.absolutePath}")
                         }
                     } else {
-                        logger.warn("【插件分析】当前项目的 POM 文件不存在或不是文件: ${pomFile.absolutePath}")
+                        logger.warn("【当前POM分析】当前项目的 POM 文件不存在或不是文件: ${pomFile.absolutePath}")
                     }
                 } else {
-                    logger.warn("【插件分析】当前项目的 POM 文件不存在: ${pomVirtualFile?.path}")
+                    logger.warn("【当前POM分析】当前项目的 POM 文件不存在: ${pomVirtualFile?.path}")
                 }
             } catch (e: Exception) {
-                logger.error("【插件分析】分析当前项目插件时发生错误", e)
+                logger.error("【当前POM分析】分析当前项目POM文件时发生错误", e)
             }
 
             logger.info("项目 ${mavenProject.displayName} 分析完成，当前总依赖数: ${dependencies.size}")
