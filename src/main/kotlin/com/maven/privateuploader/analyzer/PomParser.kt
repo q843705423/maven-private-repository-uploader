@@ -6,7 +6,9 @@ import org.apache.maven.model.Model
 import org.apache.maven.model.Parent
 import org.apache.maven.model.Dependency
 import org.apache.maven.model.Plugin
+import org.apache.maven.model.io.xpp3.MavenXpp3Reader
 import java.io.File
+import java.io.FileReader
 
 /**
  * POM 解析器
@@ -78,6 +80,9 @@ class PomParser {
      * 
      * 使用 Maven 官方的 maven-model-builder 来构建有效 POM，
      * 保证和 Maven CLI 构建行为一致。
+     * 
+     * 如果构建有效 POM 失败（例如 parent POM 不在本地仓库），
+     * 会尝试直接读取原始 POM 文件来提取基本信息（parent、groupId、artifactId、version 等）。
      *
      * @param pomFile POM 文件路径
      * @param parsePlugins 是否解析插件（默认 true）。当为 false 时，只解析 properties 等基本信息，不解析插件
@@ -90,16 +95,109 @@ class PomParser {
         }
         
         return try {
-            // 使用 Maven 官方的 ModelBuilder 构建有效 POM
+            // 首先尝试使用 Maven 官方的 ModelBuilder 构建有效 POM
             val effectiveModel = effectivePomResolver.buildEffectiveModel(pomFile, processPlugins = parsePlugins)
-                ?: return null
             
-            // 将有效 Model 转换为 PomInfo
-            convertModelToPomInfo(effectiveModel, pomFile, parsePlugins)
+            if (effectiveModel != null) {
+                // 成功构建有效 POM，使用有效 POM
+                convertModelToPomInfo(effectiveModel, pomFile, parsePlugins)
+            } else {
+                // 构建有效 POM 失败（可能是 parent POM 不在本地仓库），尝试直接读取原始 POM
+                logger.warn("构建有效 POM 失败，尝试直接读取原始 POM 文件: ${pomFile.absolutePath}")
+                val rawModel = readRawPom(pomFile)
+                if (rawModel != null) {
+                    // 从原始 POM 中提取基本信息（parent、groupId、artifactId、version 等）
+                    convertRawModelToPomInfo(rawModel, pomFile, parsePlugins)
+                } else {
+                    logger.error("无法读取原始 POM 文件: ${pomFile.absolutePath}")
+                    null
+                }
+            }
         } catch (e: Exception) {
             logger.error("解析 POM 文件失败: ${pomFile.absolutePath}", e)
+            // 即使异常，也尝试直接读取原始 POM
+            try {
+                logger.warn("发生异常后，尝试直接读取原始 POM 文件: ${pomFile.absolutePath}")
+                val rawModel = readRawPom(pomFile)
+                if (rawModel != null) {
+                    convertRawModelToPomInfo(rawModel, pomFile, parsePlugins)
+                } else {
+                    null
+                }
+            } catch (e2: Exception) {
+                logger.error("读取原始 POM 文件也失败: ${pomFile.absolutePath}", e2)
+                null
+            }
+        }
+    }
+    
+    /**
+     * 直接读取原始 POM 文件（不构建有效 POM）
+     * 用于在构建有效 POM 失败时，仍然能够提取基本信息
+     */
+    private fun readRawPom(pomFile: File): Model? {
+        return try {
+            val reader = MavenXpp3Reader()
+            FileReader(pomFile).use { fileReader ->
+                reader.read(fileReader)
+            }
+        } catch (e: Exception) {
+            logger.error("读取原始 POM 文件失败: ${pomFile.absolutePath}", e)
             null
         }
+    }
+    
+    /**
+     * 将原始 Model 转换为 PomInfo（不包含有效 POM 的合并信息）
+     * 用于在构建有效 POM 失败时，仍然能够提取基本信息
+     */
+    private fun convertRawModelToPomInfo(model: Model, pomFile: File, parsePlugins: Boolean): PomInfo {
+        // 基本信息（从原始 POM 中提取，不进行属性替换等处理）
+        val groupId = model.groupId
+        val artifactId = model.artifactId
+        val version = model.version
+        
+        // 父 POM 信息（从原始 POM 中提取）
+        val parent = model.parent?.let { convertParent(it) }
+        
+        // Properties（从原始 POM 中提取，不合并父 POM 的属性）
+        val properties = model.properties?.let { props ->
+            props.stringPropertyNames().associateWith { props.getProperty(it) }
+        } ?: emptyMap()
+        
+        // BOM 依赖（dependencyManagement 中 scope=import 的依赖）
+        // 注意：原始 POM 中的 dependencyManagement 可能包含未解析的属性，但我们仍然尝试提取
+        val bomDependencies = parseBomDependenciesFromModel(model)
+        
+        // 普通依赖（dependencies 中的依赖）
+        // 注意：原始 POM 中的 dependencies 可能包含未解析的属性，但我们仍然尝试提取
+        val dependencies = model.dependencies?.mapNotNull { dep ->
+            convertDependency(dep)
+        } ?: emptyList()
+        
+        // 插件（从原始 POM 中提取，不应用 pluginManagement 和继承）
+        val plugins = if (parsePlugins) {
+            parsePluginsFromModel(model)
+        } else {
+            emptyList()
+        }
+        
+        logger.info("【POM解析】从原始POM提取信息: $groupId:$artifactId:$version, " +
+                "父POM=${parent?.let { "${it.groupId}:${it.artifactId}:${it.version}" } ?: "无"}, " +
+                "BOM依赖=${bomDependencies.size}个, " +
+                "普通依赖=${dependencies.size}个, " +
+                "插件=${plugins.size}个")
+        
+        return PomInfo(
+            groupId = groupId,
+            artifactId = artifactId,
+            version = version,
+            parent = parent,
+            bomDependencies = bomDependencies,
+            dependencies = dependencies,
+            plugins = plugins,
+            properties = properties
+        )
     }
     
     /**
