@@ -243,12 +243,15 @@ class PomParser {
     
     /**
      * 将 ParentInfo 转换为 DependencyInfo
+     * 即使本地文件不存在，也会创建 DependencyInfo 对象，以便在列表中显示该依赖
      */
-    fun parentToDependencyInfo(parent: ParentInfo): DependencyInfo? {
+    fun parentToDependencyInfo(parent: ParentInfo): DependencyInfo {
         val pomFile = buildLocalPomPath(parent.groupId, parent.artifactId, parent.version)
-        if (!pomFile.exists()) {
-            logger.warn("父 POM 文件不存在: ${pomFile.absolutePath}")
-            return null
+        val localPath = if (pomFile.exists()) {
+            pomFile.absolutePath
+        } else {
+            logger.warn("父 POM 文件不存在: ${pomFile.absolutePath}，但仍会添加到依赖列表中")
+            "" // 本地文件不存在时，localPath 为空
         }
         
         return DependencyInfo(
@@ -256,20 +259,24 @@ class PomParser {
             artifactId = parent.artifactId,
             version = parent.version,
             packaging = "pom",
-            localPath = pomFile.absolutePath,
+            localPath = localPath,
             checkStatus = com.maven.privateuploader.model.CheckStatus.UNKNOWN,
-            selected = false
+            selected = false,
+            errorMessage = if (localPath.isEmpty()) "本地文件不存在" else ""
         )
     }
     
     /**
      * 将 BomDependency 转换为 DependencyInfo
+     * 即使本地文件不存在，也会创建 DependencyInfo 对象，以便在列表中显示该依赖
      */
-    fun bomToDependencyInfo(bom: BomDependency): DependencyInfo? {
+    fun bomToDependencyInfo(bom: BomDependency): DependencyInfo {
         val pomFile = buildLocalPomPath(bom.groupId, bom.artifactId, bom.version)
-        if (!pomFile.exists()) {
-            logger.warn("BOM POM 文件不存在: ${pomFile.absolutePath}")
-            return null
+        val localPath = if (pomFile.exists()) {
+            pomFile.absolutePath
+        } else {
+            logger.warn("BOM POM 文件不存在: ${pomFile.absolutePath}，但仍会添加到依赖列表中")
+            "" // 本地文件不存在时，localPath 为空
         }
         
         return DependencyInfo(
@@ -277,9 +284,10 @@ class PomParser {
             artifactId = bom.artifactId,
             version = bom.version,
             packaging = "pom",
-            localPath = pomFile.absolutePath,
+            localPath = localPath,
             checkStatus = com.maven.privateuploader.model.CheckStatus.UNKNOWN,
-            selected = false
+            selected = false,
+            errorMessage = if (localPath.isEmpty()) "本地文件不存在" else ""
         )
     }
 }
