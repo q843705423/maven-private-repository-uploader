@@ -319,7 +319,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                         val missingCount = dependencies.count { it.checkStatus == CheckStatus.MISSING }
                         val existsCount = dependencies.count { it.checkStatus == CheckStatus.EXISTS }
                         val errorCount = dependencies.count { it.checkStatus == CheckStatus.ERROR }
-                        updateTableData(dependencies, "私仓检查完成：缺失 $missingCount 个，已存在 $existsCount 个")
+                        // 检查完成后，自动将缺失的记录排到前面
+                        updateTableData(dependencies, "私仓检查完成：缺失 $missingCount 个，已存在 $existsCount 个", sortMissingFirst = true)
                         setButtonsEnabled(true)
                     }
                 } catch (e: Exception) {
@@ -335,14 +336,17 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
     /**
      * 更新表格数据（统一方法）
+     * @param deps 依赖列表
+     * @param statusMessage 状态消息
+     * @param sortMissingFirst 是否将缺失的记录排到前面（检查完成后自动排序）
      */
-    private fun updateTableData(deps: List<DependencyInfo>, statusMessage: String) {
+    private fun updateTableData(deps: List<DependencyInfo>, statusMessage: String, sortMissingFirst: Boolean = false) {
         logger.info("更新表格数据，依赖数量: ${deps.size}")
         
         dependencies = deps
         
         // 更新模型数据（这会触发fireTableDataChanged）
-        tableModel.setDependencies(deps)
+        tableModel.setDependencies(deps, sortMissingFirst)
         
         logger.info("表格数据已更新，行数: ${tableModel.rowCount}")
         
@@ -431,7 +435,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                         val errorCount = deps.count { it.checkStatus == CheckStatus.ERROR }
                         val selectedCount = deps.count { it.selected }
                         
-                        updateTableData(deps, "检查完成：缺失 $missingCount 个（已自动勾选 $selectedCount 个），已存在 $existsCount 个")
+                        // 检查完成后，自动将缺失的记录排到前面
+                        updateTableData(deps, "检查完成：缺失 $missingCount 个（已自动勾选 $selectedCount 个），已存在 $existsCount 个", sortMissingFirst = true)
                         setButtonsEnabled(true)
                     }
                 } catch (e: Exception) {

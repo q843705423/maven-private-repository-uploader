@@ -82,11 +82,17 @@ class DependencyTableModel : AbstractTableModel() {
 
     /**
      * 设置依赖列表
+     * @param dependencies 依赖列表
+     * @param sortMissingFirst 是否将缺失的记录排到前面
      */
-    fun setDependencies(dependencies: List<DependencyInfo>) {
-        val oldSize = this.dependencies.size
-        this.dependencies = dependencies.toMutableList()
-        val newSize = this.dependencies.size
+    fun setDependencies(dependencies: List<DependencyInfo>, sortMissingFirst: Boolean = false) {
+        val sortedDeps = if (sortMissingFirst) {
+            // 将缺失的记录排到前面，其他记录保持原有顺序
+            dependencies.sortedWith(compareBy<DependencyInfo> { it.checkStatus != CheckStatus.MISSING })
+        } else {
+            dependencies
+        }
+        this.dependencies = sortedDeps.toMutableList()
         // 使用fireTableDataChanged()通知所有监听器数据已更改
         fireTableDataChanged()
     }
