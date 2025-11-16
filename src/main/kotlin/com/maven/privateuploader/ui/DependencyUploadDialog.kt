@@ -62,9 +62,24 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
             scanDependenciesOnly() 
         }
     }
+    
+    override fun doOKAction() {
+        close(OK_EXIT_CODE)
+    }
 
     override fun createCenterPanel(): JComponent {
-        return createMainPanel()
+        val panel = createMainPanel()
+        // 设置面板的 preferredSize，让 DialogWrapper 使用这个大小
+        // 表格各列总宽度约1000像素，加上边距和滚动条，设置为1500x900以提供更好的显示空间
+        panel.preferredSize = Dimension(1500, 900)
+        
+        // 在面板添加到窗口后，再次确保窗口大小正确
+        SwingUtilities.invokeLater {
+            window?.setSize(1500, 900)
+            window?.setLocationRelativeTo(null)
+        }
+        
+        return panel
     }
 
     private fun createMainPanel(): JPanel {
