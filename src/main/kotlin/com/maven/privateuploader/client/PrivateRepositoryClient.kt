@@ -2,7 +2,7 @@ package com.maven.privateuploader.client
 
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProgressIndicator
-import com.maven.privateuploader.analyzer.PomParser
+import com.maven.privateuploader.analyzer.PomParserHelper
 import com.maven.privateuploader.model.CheckStatus
 import com.maven.privateuploader.model.DependencyInfo
 import com.maven.privateuploader.model.RepositoryConfig
@@ -212,7 +212,7 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
             // 如果是POM类型的依赖（如父POM、BOM），需要递归上传父 POM 和 BOM
             if (dependency.packaging == "pom") {
                 // 先递归上传父 POM 链和 BOM
-                val pomParser = PomParser()
+                val pomParser = PomParserHelper()
                 val pomInfo = pomParser.parsePom(jarFile)
                 
                 if (pomInfo != null) {
@@ -277,7 +277,7 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
             val pomFile = findPomFile(jarFile)
             if (pomFile != null && pomFile.exists()) {
                 // 解析 JAR 的 POM，递归上传父 POM 和 BOM
-                val pomParser = PomParser()
+                val pomParser = PomParserHelper()
                 val pomInfo = pomParser.parsePom(pomFile)
                 
                 if (pomInfo != null) {

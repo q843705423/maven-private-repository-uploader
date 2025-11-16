@@ -161,7 +161,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
                     // 将 VirtualFile 转换为 File
                     val pomFile = File(pomVirtualFile.path)
                     if (pomFile.exists() && pomFile.isFile) {
-                        val pomParser = PomParser()
+                        val pomParser = PomParserHelper()
                         val pomInfo = pomParser.parsePom(pomFile)
                         if (pomInfo != null && pomInfo.plugins.isNotEmpty()) {
                             logger.info("【插件分析】当前项目包含 ${pomInfo.plugins.size} 个插件，开始分析")
@@ -276,7 +276,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
                     pomFile.absolutePath
                 } else {
                     // 如果本地路径不存在，尝试构建路径
-                    val pomParser = PomParser()
+                    val pomParser = PomParserHelper()
                     pomParser.buildLocalPomPath(dependencyInfo.groupId, dependencyInfo.artifactId, dependencyInfo.version).absolutePath
                 }
             }
@@ -298,7 +298,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
             analyzedDependencyPoms.add(dependencyKey)
             logger.info("【依赖POM分析】开始分析依赖 $dependencyKey 的 POM: ${pomFile.absolutePath}")
             
-            val pomParser = PomParser()
+            val pomParser = PomParserHelper()
             val pomInfo = pomParser.parsePom(pomFile, parsePlugins = false)  // 不解析插件，只解析 parent 和 dependencies
             
             if (pomInfo == null) {
@@ -516,7 +516,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
                         logger.info("【父POM分析】添加父POM: ${parentDependency.getGAV()} (${parentPomPath.absolutePath})")
                         
                         // 递归分析父POM的父POM和BOM依赖
-                        val pomParser = PomParser()
+                        val pomParser = PomParserHelper()
                         val pomInfo = pomParser.parsePom(parentPomPath)
                         if (pomInfo != null) {
                             // 处理父POM的父POM
@@ -593,7 +593,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
                 return
             }
             
-            val pomParser = PomParser()
+            val pomParser = PomParserHelper()
             val pomInfo = pomParser.parsePom(pomFile)
             
             if (pomInfo == null) {
@@ -685,7 +685,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
         bomDependencies: List<org.apache.maven.model.Dependency>,
         dependencies: MutableSet<DependencyInfo>,
         analyzedParents: MutableSet<String>,
-        pomParser: PomParser,
+        pomParser: PomParserHelper,
         pluginDependencies: MutableMap<String, Pair<DependencyInfo, PluginOrigin>>,
         bomDepth: Int = 1
     ) {
@@ -794,7 +794,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
     private fun analyzePlugins(
         plugins: List<org.apache.maven.model.Plugin>,
         dependencies: MutableMap<String, Pair<DependencyInfo, PluginOrigin>>,
-        pomParser: PomParser,
+        pomParser: PomParserHelper,
         origin: PluginOrigin
     ) {
         plugins.forEach { plugin ->

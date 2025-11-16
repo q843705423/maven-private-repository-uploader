@@ -19,7 +19,7 @@ import java.nio.file.StandardCopyOption
  */
 class PomParserRecursiveParentTest {
 
-    private val pomParser = PomParser()
+    private val pomParser = PomParserHelper()
 
     /**
      * 测试解析 ruoyi stock-recommendations POM 文件
@@ -154,7 +154,7 @@ class PomParserRecursiveParentTest {
     fun `test parentToDependencyInfo sets packaging and localPath correctly`() {
         val tempRepo = createTempMavenRepository()
         try {
-            val parent = PomParser.ParentInfo(
+            val parent = PomParserHelper.ParentInfo(
                 groupId = "org.springframework.boot",
                 artifactId = "spring-boot-starter-parent",
                 version = "2.5.15",
@@ -271,7 +271,7 @@ class PomParserRecursiveParentTest {
      * 由于 PomParser.buildLocalPomPath 使用系统属性，我们需要创建一个能够指定仓库路径的版本
      */
     private fun testParentToDependencyInfo(
-        parent: PomParser.ParentInfo,
+        parent: PomParserHelper.ParentInfo,
         expectedPomFile: File,
         tempRepo: File
     ): com.maven.privateuploader.model.DependencyInfo? {

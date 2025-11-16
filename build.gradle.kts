@@ -50,6 +50,7 @@ dependencies {
     implementation("org.apache.maven:maven-model:3.9.6")
     implementation("org.apache.maven:maven-settings:3.9.6")
     implementation("org.apache.maven:maven-settings-builder:3.9.6")
+    implementation("org.apache.maven:maven-artifact:3.9.6")
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
