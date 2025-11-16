@@ -140,6 +140,33 @@ class MavenDependencyAnalyzer(private val project: Project) {
             val dependencyCountAfterTree = dependencies.size
             logger.info("【传递依赖分析】传递依赖树分析完成，新增 ${dependencyCountAfterTree - dependencyCountBeforeTree} 个依赖，当前总依赖数: ${dependencies.size}")
 
+            // 分析当前项目的 POM 文件中的插件
+            logger.info("【插件分析】开始分析当前项目的插件，当前依赖数: ${dependencies.size}")
+            try {
+                val pomVirtualFile = mavenProject.file
+                if (pomVirtualFile != null && pomVirtualFile.exists()) {
+                    // 将 VirtualFile 转换为 File
+                    val pomFile = File(pomVirtualFile.path)
+                    if (pomFile.exists() && pomFile.isFile) {
+                        val pomParser = PomParser()
+                        val pomInfo = pomParser.parsePom(pomFile)
+                        if (pomInfo != null && pomInfo.plugins.isNotEmpty()) {
+                            logger.info("【插件分析】当前项目包含 ${pomInfo.plugins.size} 个插件，开始分析")
+                            analyzePlugins(pomInfo.plugins, dependencies, pomParser)
+                            logger.info("【插件分析】当前项目插件分析完成，当前总依赖数: ${dependencies.size}")
+                        } else {
+                            logger.debug("【插件分析】当前项目没有插件或解析失败")
+                        }
+                    } else {
+                        logger.warn("【插件分析】当前项目的 POM 文件不存在或不是文件: ${pomFile.absolutePath}")
+                    }
+                } else {
+                    logger.warn("【插件分析】当前项目的 POM 文件不存在: ${pomVirtualFile?.path}")
+                }
+            } catch (e: Exception) {
+                logger.error("【插件分析】分析当前项目插件时发生错误", e)
+            }
+
             logger.info("项目 ${mavenProject.displayName} 分析完成，当前总依赖数: ${dependencies.size}")
 
         } catch (e: Exception) {
@@ -347,6 +374,12 @@ class MavenDependencyAnalyzer(private val project: Project) {
                                 logger.info("【BOM分析】父POM ${parentDependency.getGAV()} 包含 ${pomInfo.bomDependencies.size} 个BOM依赖，开始分析")
                                 analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
                             }
+                            
+                            // 处理父POM中的插件
+                            if (pomInfo.plugins.isNotEmpty()) {
+                                logger.info("【插件分析】父POM ${parentDependency.getGAV()} 包含 ${pomInfo.plugins.size} 个插件，开始分析")
+                                analyzePlugins(pomInfo.plugins, dependencies, pomParser)
+                            }
                         }
                     } else {
                         logger.warn("父POM文件不存在: ${parentPomPath.absolutePath}")
@@ -446,6 +479,12 @@ class MavenDependencyAnalyzer(private val project: Project) {
                 logger.info("【BOM分析】POM ${currentKey} 包含 ${pomInfo.bomDependencies.size} 个BOM依赖，开始分析")
                 analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
             }
+            
+            // 处理当前POM中的插件
+            if (pomInfo.plugins.isNotEmpty()) {
+                logger.info("【插件分析】POM ${currentKey} 包含 ${pomInfo.plugins.size} 个插件，开始分析")
+                analyzePlugins(pomInfo.plugins, dependencies, pomParser)
+            }
         } catch (e: Exception) {
             logger.error("从文件分析父POM时发生错误: $pomFilePath", e)
         }
@@ -510,6 +549,12 @@ class MavenDependencyAnalyzer(private val project: Project) {
                                 logger.info("【BOM分析】BOM ${bomDependency.getGAV()} 包含 ${bomPomInfo.bomDependencies.size} 个子BOM依赖，开始递归分析")
                                 analyzeBomDependencies(bomPomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
                             }
+                            
+                            // 处理BOM中的插件
+                            if (bomPomInfo.plugins.isNotEmpty()) {
+                                logger.info("【插件分析】BOM ${bomDependency.getGAV()} 包含 ${bomPomInfo.plugins.size} 个插件，开始分析")
+                                analyzePlugins(bomPomInfo.plugins, dependencies, pomParser)
+                            }
                         }
                     }
                 } else {
@@ -517,6 +562,42 @@ class MavenDependencyAnalyzer(private val project: Project) {
                 }
             } catch (e: Exception) {
                 logger.error("【BOM分析】分析BOM依赖 ${bom.groupId}:${bom.artifactId}:${bom.version} 时发生错误", e)
+            }
+        }
+    }
+    
+    /**
+     * 分析插件依赖
+     * 
+     * @param plugins 插件列表
+     * @param dependencies 依赖集合
+     * @param pomParser POM解析器
+     */
+    private fun analyzePlugins(
+        plugins: List<PomParser.PluginDependency>,
+        dependencies: MutableSet<DependencyInfo>,
+        pomParser: PomParser
+    ) {
+        plugins.forEach { plugin ->
+            try {
+                val pluginDependency = pomParser.pluginToDependencyInfo(plugin)
+                val pluginKey = "${pluginDependency.groupId}:${pluginDependency.artifactId}:${pluginDependency.version}"
+                
+                // 检查是否已经添加过（避免重复）
+                if (dependencies.any { 
+                    it.groupId == pluginDependency.groupId && 
+                    it.artifactId == pluginDependency.artifactId && 
+                    it.version == pluginDependency.version 
+                }) {
+                    logger.debug("【插件分析】插件 $pluginKey 已存在，跳过重复")
+                    return@forEach
+                }
+                
+                // 添加插件到依赖列表（即使本地文件不存在）
+                dependencies.add(pluginDependency)
+                logger.info("【插件分析】添加插件: ${pluginDependency.getGAV()} (本地文件${if (pluginDependency.localPath.isEmpty()) "不存在" else "存在"})")
+            } catch (e: Exception) {
+                logger.error("【插件分析】分析插件 ${plugin.groupId}:${plugin.artifactId}:${plugin.version} 时发生错误", e)
             }
         }
     }

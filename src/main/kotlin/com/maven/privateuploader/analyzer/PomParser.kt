@@ -30,6 +30,7 @@ class PomParser {
         val version: String?,
         val parent: ParentInfo?,
         val bomDependencies: List<BomDependency>,
+        val plugins: List<PluginDependency>,
         val properties: Map<String, String>
     )
     
@@ -47,6 +48,15 @@ class PomParser {
      * BOM 依赖信息（dependencyManagement 中 scope=import 的依赖）
      */
     data class BomDependency(
+        val groupId: String,
+        val artifactId: String,
+        val version: String
+    )
+    
+    /**
+     * Maven 插件信息
+     */
+    data class PluginDependency(
         val groupId: String,
         val artifactId: String,
         val version: String
@@ -112,12 +122,16 @@ class PomParser {
             // 解析 BOM 依赖（需要应用属性解析）
             val bomDependencies = parseBomDependencies(document, namespaceURI, allProperties)
             
+            // 解析 Maven 插件（需要应用属性解析）
+            val plugins = parsePlugins(document, namespaceURI, allProperties)
+            
             PomInfo(
                 groupId = groupId,
                 artifactId = artifactId,
                 version = version,
                 parent = resolvedParent,
                 bomDependencies = bomDependencies,
+                plugins = plugins,
                 properties = allProperties
             )
         } catch (e: Exception) {
@@ -323,6 +337,146 @@ class PomParser {
     }
     
     /**
+     * 解析 Maven 插件（build/plugins 和 build/pluginManagement/plugins）
+     */
+    private fun parsePlugins(document: Document, namespaceURI: String?, properties: Map<String, String>): List<PluginDependency> {
+        val plugins = mutableListOf<PluginDependency>()
+        
+        try {
+            // 查找 build 节点
+            val buildNode = getElementByTagName(document, "build", namespaceURI) as? Element
+                ?: return emptyList()
+            
+            // 解析 build/plugins 中的插件
+            val pluginsNode = getElementByTagName(buildNode, "plugins", namespaceURI) as? Element
+            if (pluginsNode != null) {
+                val pluginNodeList = getElementsByTagName(pluginsNode, "plugin", namespaceURI)
+                for (i in 0 until pluginNodeList.length) {
+                    val pluginNode = pluginNodeList.item(i) as? Element
+                        ?: continue
+                    parsePluginNode(pluginNode, namespaceURI, properties, plugins)
+                }
+            }
+            
+            // 解析 build/pluginManagement/plugins 中的插件
+            val pluginManagementNode = getElementByTagName(buildNode, "pluginManagement", namespaceURI) as? Element
+            if (pluginManagementNode != null) {
+                val pluginManagementPluginsNode = getElementByTagName(pluginManagementNode, "plugins", namespaceURI) as? Element
+                if (pluginManagementPluginsNode != null) {
+                    val pluginNodeList = getElementsByTagName(pluginManagementPluginsNode, "plugin", namespaceURI)
+                    for (i in 0 until pluginNodeList.length) {
+                        val pluginNode = pluginNodeList.item(i) as? Element
+                            ?: continue
+                        parsePluginNode(pluginNode, namespaceURI, properties, plugins)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn("解析 Maven 插件时发生错误", e)
+        }
+        
+        return plugins
+    }
+    
+    /**
+     * 解析单个插件节点
+     */
+    private fun parsePluginNode(pluginNode: Element, namespaceURI: String?, properties: Map<String, String>, plugins: MutableList<PluginDependency>) {
+        try {
+            // 解析插件的 groupId、artifactId、version
+            // 注意：插件的 groupId 可能继承自父 POM 或使用默认值 org.apache.maven.plugins
+            var rawGroupId = getElementText(pluginNode, "groupId", namespaceURI)
+            val rawArtifactId = getElementText(pluginNode, "artifactId", namespaceURI)
+            val rawVersion = getElementText(pluginNode, "version", namespaceURI)
+            
+            // 如果 groupId 为空，使用默认值 org.apache.maven.plugins
+            if (rawGroupId.isNullOrBlank()) {
+                rawGroupId = "org.apache.maven.plugins"
+            }
+            
+            // 应用属性解析
+            val groupId = resolveProperties(rawGroupId, properties) ?: "org.apache.maven.plugins"
+            val artifactId = resolveProperties(rawArtifactId, properties)
+            val version = resolveProperties(rawVersion, properties)
+            
+            if (artifactId.isNullOrBlank() || version.isNullOrBlank()) {
+                logger.debug("插件信息不完整，跳过: groupId=$groupId, artifactId=$artifactId, version=$version")
+                return
+            }
+            
+            // 检查是否已存在（避免重复）
+            val pluginKey = "$groupId:$artifactId:$version"
+            if (plugins.any { it.groupId == groupId && it.artifactId == artifactId && it.version == version }) {
+                logger.debug("插件 $pluginKey 已存在，跳过重复")
+                return
+            }
+            
+            plugins.add(
+                PluginDependency(
+                    groupId = groupId,
+                    artifactId = artifactId,
+                    version = version
+                )
+            )
+            
+            logger.debug("发现 Maven 插件: $groupId:$artifactId:$version")
+            
+            // 解析插件中的依赖（plugin/dependencies/dependency）
+            val pluginDependenciesNode = getElementByTagName(pluginNode, "dependencies", namespaceURI) as? Element
+            if (pluginDependenciesNode != null) {
+                val dependencyNodeList = getElementsByTagName(pluginDependenciesNode, "dependency", namespaceURI)
+                for (i in 0 until dependencyNodeList.length) {
+                    val dependencyNode = dependencyNodeList.item(i) as? Element
+                        ?: continue
+                    parsePluginDependencyNode(dependencyNode, namespaceURI, properties, plugins)
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn("解析插件节点时发生错误", e)
+        }
+    }
+    
+    /**
+     * 解析插件中的依赖节点
+     */
+    private fun parsePluginDependencyNode(dependencyNode: Element, namespaceURI: String?, properties: Map<String, String>, plugins: MutableList<PluginDependency>) {
+        try {
+            val rawGroupId = getElementText(dependencyNode, "groupId", namespaceURI)
+            val rawArtifactId = getElementText(dependencyNode, "artifactId", namespaceURI)
+            val rawVersion = getElementText(dependencyNode, "version", namespaceURI)
+            
+            // 应用属性解析
+            val groupId = resolveProperties(rawGroupId, properties)
+            val artifactId = resolveProperties(rawArtifactId, properties)
+            val version = resolveProperties(rawVersion, properties)
+            
+            if (groupId.isNullOrBlank() || artifactId.isNullOrBlank() || version.isNullOrBlank()) {
+                logger.debug("插件依赖信息不完整，跳过: groupId=$groupId, artifactId=$artifactId, version=$version")
+                return
+            }
+            
+            // 检查是否已存在（避免重复）
+            val pluginKey = "$groupId:$artifactId:$version"
+            if (plugins.any { it.groupId == groupId && it.artifactId == artifactId && it.version == version }) {
+                logger.debug("插件依赖 $pluginKey 已存在，跳过重复")
+                return
+            }
+            
+            plugins.add(
+                PluginDependency(
+                    groupId = groupId,
+                    artifactId = artifactId,
+                    version = version
+                )
+            )
+            
+            logger.debug("发现插件依赖: $groupId:$artifactId:$version")
+        } catch (e: Exception) {
+            logger.warn("解析插件依赖节点时发生错误", e)
+        }
+    }
+    
+    /**
      * 从 Document 中获取元素（支持命名空间）
      */
     private fun getElementByTagName(document: Document, tagName: String, namespaceURI: String?): Node? {
@@ -331,6 +485,18 @@ class PomParser {
                 ?: document.getElementsByTagName(tagName).item(0)  // 回退到无命名空间查找
         } else {
             document.getElementsByTagName(tagName).item(0)
+        }
+    }
+    
+    /**
+     * 从 Element 中获取子元素（支持命名空间）
+     */
+    private fun getElementByTagName(element: Element, tagName: String, namespaceURI: String?): Node? {
+        val nodeList = getElementsByTagName(element, tagName, namespaceURI)
+        return if (nodeList.length > 0) {
+            nodeList.item(0)
+        } else {
+            null
         }
     }
     
@@ -431,6 +597,41 @@ class PomParser {
             artifactId = bom.artifactId,
             version = bom.version,
             packaging = "pom",
+            localPath = localPath,
+            checkStatus = com.maven.privateuploader.model.CheckStatus.UNKNOWN,
+            selected = false,
+            errorMessage = if (localPath.isEmpty()) "本地文件不存在" else ""
+        )
+    }
+    
+    /**
+     * 将 PluginDependency 转换为 DependencyInfo
+     * Maven 插件的 packaging 是 maven-plugin，但实际文件是 jar
+     * 即使本地文件不存在，也会创建 DependencyInfo 对象，以便在列表中显示该依赖
+     */
+    fun pluginToDependencyInfo(plugin: PluginDependency): DependencyInfo {
+        // Maven 插件的文件路径：groupId/artifactId/version/artifactId-version.jar
+        val localRepoPath = getLocalMavenRepositoryPath()
+        val jarFile = File(localRepoPath,
+            "${plugin.groupId.replace('.', '/')}/${plugin.artifactId}/${plugin.version}/${plugin.artifactId}-${plugin.version}.jar")
+        val pomFile = File(localRepoPath,
+            "${plugin.groupId.replace('.', '/')}/${plugin.artifactId}/${plugin.version}/${plugin.artifactId}-${plugin.version}.pom")
+        
+        // 优先使用 jar 文件路径，如果不存在则使用 pom 文件路径
+        val localPath = when {
+            jarFile.exists() -> jarFile.absolutePath
+            pomFile.exists() -> pomFile.absolutePath
+            else -> {
+                logger.warn("插件文件不存在: ${jarFile.absolutePath}，但仍会添加到依赖列表中")
+                "" // 本地文件不存在时，localPath 为空
+            }
+        }
+        
+        return DependencyInfo(
+            groupId = plugin.groupId,
+            artifactId = plugin.artifactId,
+            version = plugin.version,
+            packaging = "maven-plugin", // Maven 插件的 packaging 类型
             localPath = localPath,
             checkStatus = com.maven.privateuploader.model.CheckStatus.UNKNOWN,
             selected = false,
