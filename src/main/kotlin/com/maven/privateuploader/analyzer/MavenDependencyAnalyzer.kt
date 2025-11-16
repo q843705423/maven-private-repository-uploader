@@ -333,9 +333,13 @@ class MavenDependencyAnalyzer(private val project: Project) {
                             return@forEach
                         }
                         
-                        // 跳过 test 和 provided scope 的依赖
-                        if (transitive.scope == "test" || transitive.scope == "provided") {
-                            logger.debug("【依赖POM分析】跳过 test/provided scope 的传递依赖: ${transitive.groupId}:${transitive.artifactId}:${transitive.version}")
+                        // 获取 packaging 类型（type 字段对应 packaging）
+                        val packaging = transitive.type ?: "jar"
+                        
+                        // 跳过 test 和 provided scope 的依赖（但 POM 类型的依赖不受 scope 限制）
+                        // 原因：POM 类型的依赖（如父 POM）即使 scope 是 test，也需要被包含，因为它们可能被其他依赖引用
+                        if (packaging != "pom" && (transitive.scope == "test" || transitive.scope == "provided")) {
+                            logger.debug("【依赖POM分析】跳过 test/provided scope 的传递依赖: ${transitive.groupId}:${transitive.artifactId}:${transitive.version} (packaging=$packaging)")
                             return@forEach
                         }
                         
