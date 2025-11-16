@@ -24,6 +24,7 @@ import com.maven.privateuploader.service.DependencyUploadService
 import com.maven.privateuploader.ui.table.DependencyTableColumn
 import com.maven.privateuploader.ui.table.DependencyTableModel
 import com.maven.privateuploader.service.ExcelExportService
+import com.maven.privateuploader.i18n.PrivateUploaderBundle
 import java.awt.*
 import javax.swing.*
 import javax.swing.filechooser.FileNameExtensionFilter
@@ -75,9 +76,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private var config: RepositoryConfig? = null
 
     init {
-        title = "Maven依赖上传到私仓"
+        title = PrivateUploaderBundle.message("dialog.title")
         isModal = true
-        setOKButtonText("关闭")
+        setOKButtonText(PrivateUploaderBundle.message("dialog.close"))
         init()
         
         // Dialog打开时只扫描依赖，不检查私仓（保持原有行为，不自动执行一键操作）
@@ -143,7 +144,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
         // 表格面板
         val tablePanel = JPanel(BorderLayout())
-        tablePanel.add(JBLabel("依赖列表:"), BorderLayout.NORTH)
+        tablePanel.add(JBLabel(PrivateUploaderBundle.message("dialog.dependency.list")), BorderLayout.NORTH)
         tablePanel.add(tableScrollPane, BorderLayout.CENTER)
         mainPanel.add(tablePanel, BorderLayout.CENTER)
 
@@ -160,7 +161,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         repoStatusLabel.border = JBUI.Borders.empty(5, 0, 5, 0)
 
         // 创建"去配置"按钮，当配置缺失时显示
-        goToConfigButton = JButton("⚙ 去配置")
+        goToConfigButton = JButton(PrivateUploaderBundle.message("dialog.go.to.config"))
         goToConfigButton.addActionListener { openSettings() }
         // 设置按钮样式，使其更醒目
         goToConfigButton.font = goToConfigButton.font.deriveFont(java.awt.Font.BOLD)
@@ -196,7 +197,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         
         if (currentConfig.enabled && currentConfig.isValid()) {
             val repoUrl = currentConfig.getDeployUrl()
-            repoStatusLabel.text = "<html><b>当前仓库：</b>$repoUrl<br><b>状态：</b><span style='color:green;'>已通过测试</span></html>"
+            repoStatusLabel.text = "<html><b>${PrivateUploaderBundle.message("repo.status.configured")}</b>$repoUrl<br><b>${PrivateUploaderBundle.message("repo.status.status")}</b><span style='color:green;'>${PrivateUploaderBundle.message("repo.status.passed")}</span></html>"
             // 隐藏按钮区的警告
             if (::buttonAreaWarningLabel.isInitialized) {
                 buttonAreaWarningLabel.isVisible = false
@@ -211,7 +212,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                 panel?.repaint()
             }
         } else {
-            repoStatusLabel.text = "<html><b>当前仓库：</b>未配置<br><b>状态：</b><span style='color:red;'>配置缺失</span></html>"
+            repoStatusLabel.text = "<html><b>${PrivateUploaderBundle.message("repo.status.configured")}</b>${PrivateUploaderBundle.message("repo.status.not.configured")}<br><b>${PrivateUploaderBundle.message("repo.status.status")}</b><span style='color:red;'>${PrivateUploaderBundle.message("repo.status.missing")}</span></html>"
             // 显示按钮区的警告
             if (::buttonAreaWarningLabel.isInitialized) {
                 buttonAreaWarningLabel.isVisible = true
@@ -256,9 +257,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         filterPanel.isVisible = false
 
         // 搜索框
-        val searchLabel = JBLabel("搜索:")
+        val searchLabel = JBLabel(PrivateUploaderBundle.message("search.label"))
         searchTextField = JBTextField()
-        searchTextField.toolTipText = "输入 artifactId、groupId 或 version 进行过滤"
+        searchTextField.toolTipText = PrivateUploaderBundle.message("search.tooltip")
         searchTextField.preferredSize = Dimension(300, searchTextField.preferredSize.height)
         searchTextField.maximumSize = Dimension(300, searchTextField.preferredSize.height)
         
@@ -276,29 +277,29 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         })
 
         // 过滤标签按钮
-        filterAllButton = JButton("全部")
+        filterAllButton = JButton(PrivateUploaderBundle.message("filter.all"))
         filterAllButton.isSelected = true
         filterAllButton.addActionListener { 
             setFilterType(DependencyTableModel.FilterType.ALL)
             updateFilterButtons(filterAllButton)
         }
 
-        filterMissingButton = JButton("只看缺失")
-        filterMissingButton.toolTipText = "显示私仓缺失或本地缺失的依赖"
+        filterMissingButton = JButton(PrivateUploaderBundle.message("filter.missing.only"))
+        filterMissingButton.toolTipText = PrivateUploaderBundle.message("filter.missing.tooltip")
         filterMissingButton.addActionListener { 
             setFilterType(DependencyTableModel.FilterType.MISSING_ONLY)
             updateFilterButtons(filterMissingButton)
         }
 
-        filterErrorButton = JButton("只看错误")
-        filterErrorButton.toolTipText = "显示检查出错的依赖"
+        filterErrorButton = JButton(PrivateUploaderBundle.message("filter.error.only"))
+        filterErrorButton.toolTipText = PrivateUploaderBundle.message("filter.error.tooltip")
         filterErrorButton.addActionListener { 
             setFilterType(DependencyTableModel.FilterType.ERROR_ONLY)
             updateFilterButtons(filterErrorButton)
         }
 
-        filterExistsButton = JButton("只看已存在")
-        filterExistsButton.toolTipText = "显示已存在于私仓的依赖"
+        filterExistsButton = JButton(PrivateUploaderBundle.message("filter.exists.only"))
+        filterExistsButton.toolTipText = PrivateUploaderBundle.message("filter.exists.tooltip")
         filterExistsButton.addActionListener { 
             setFilterType(DependencyTableModel.FilterType.EXISTS_ONLY)
             updateFilterButtons(filterExistsButton)
@@ -373,35 +374,35 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         val selected = tableModel.getSelectedCount()
         
         val statusText = if (filtered < total) {
-            "显示 $filtered / $total 个依赖（已选中 $selected 个）"
+            PrivateUploaderBundle.message("status.show.filtered", filtered, total, selected)
         } else {
-            "共 $total 个依赖（已选中 $selected 个）"
+            PrivateUploaderBundle.message("status.show.total", total, selected)
         }
         updateStatus(statusText)
     }
 
     private fun createToolbarPanel(): JPanel {
         // 配置警告标签（在按钮上方显示）
-        buttonAreaWarningLabel = JBLabel("⚠ 请先完成配置")
+        buttonAreaWarningLabel = JBLabel(PrivateUploaderBundle.message("dialog.warning.config"))
         buttonAreaWarningLabel.foreground = Color(200, 0, 0) // 红色
         buttonAreaWarningLabel.font = buttonAreaWarningLabel.font.deriveFont(java.awt.Font.BOLD)
         buttonAreaWarningLabel.border = JBUI.Borders.empty(5, 0, 5, 0)
         buttonAreaWarningLabel.isVisible = false
 
         // 主按钮：一键扫描并检查缺失依赖
-        oneClickButton = JButton("一键扫描并检查私仓缺失依赖")
+        oneClickButton = JButton(PrivateUploaderBundle.message("dialog.one.click.scan"))
         oneClickButton.addActionListener { oneClickScanAndCheck() }
         // 设置主按钮样式，使其更突出
         oneClickButton.font = oneClickButton.font.deriveFont(java.awt.Font.BOLD, oneClickButton.font.size + 1f)
 
         // 上传按钮（核心功能，从高级面板移出）
-        uploadButton = JButton("上传到私仓")
+        uploadButton = JButton(PrivateUploaderBundle.message("dialog.upload.selected"))
         uploadButton.addActionListener { uploadSelectedDependencies() }
         // 初始状态禁用上传按钮
         uploadButton.isEnabled = false
 
         // 高级操作按钮（切换显示/隐藏）
-        advancedToggleButton = JButton("高级操作 ▼")
+        advancedToggleButton = JButton(PrivateUploaderBundle.message("dialog.advanced.operations"))
         advancedToggleButton.addActionListener { toggleAdvancedOptions() }
 
         // 高级操作面板（默认隐藏）
@@ -409,28 +410,28 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         advancedPanel.layout = BoxLayout(advancedPanel, BoxLayout.X_AXIS)
         advancedPanel.isVisible = false
 
-        checkAllButton = JButton("全部勾选")
+        checkAllButton = JButton(PrivateUploaderBundle.message("dialog.select.all"))
         checkAllButton.addActionListener { selectAllDependencies(true) }
 
-        uncheckAllButton = JButton("全部取消")
+        uncheckAllButton = JButton(PrivateUploaderBundle.message("dialog.unselect.all"))
         uncheckAllButton.addActionListener { selectAllDependencies(false) }
 
-        scanButton = JButton("重新扫描依赖")
+        scanButton = JButton(PrivateUploaderBundle.message("dialog.rescan.dependencies"))
         scanButton.addActionListener { rescanDependencies() }
 
-        refreshButton = JButton("重新检查私仓")
+        refreshButton = JButton(PrivateUploaderBundle.message("dialog.recheck.repository"))
         refreshButton.addActionListener { recheckRepositoryStatus() }
 
-        configButton = JButton("私仓设置")
+        configButton = JButton(PrivateUploaderBundle.message("dialog.repository.settings"))
         configButton.addActionListener { openSettings() }
 
         // 打开搜索框按钮（添加到高级面板）
-        showSearchButton = JButton("打开搜索框")
+        showSearchButton = JButton(PrivateUploaderBundle.message("dialog.open.search"))
         showSearchButton.addActionListener { toggleSearchPanel() }
 
         // 导出选中依赖列表按钮（添加到高级面板）
-        exportButton = JButton("导出选中依赖")
-        exportButton.toolTipText = "将表格中选中的依赖导出为 Excel 文件（支持 Shift/Ctrl 多选）"
+        exportButton = JButton(PrivateUploaderBundle.message("dialog.export.selected"))
+        exportButton.toolTipText = PrivateUploaderBundle.message("dialog.export.tooltip")
         exportButton.addActionListener { exportSelectedDependencies() }
 
         // 将高级操作按钮添加到高级面板

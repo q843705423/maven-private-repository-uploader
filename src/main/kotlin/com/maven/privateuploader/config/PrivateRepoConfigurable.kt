@@ -13,6 +13,8 @@ import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import com.maven.privateuploader.model.RepositoryConfig
 import com.maven.privateuploader.state.PrivateRepoSettings
+import com.maven.privateuploader.i18n.LanguageSettings
+import com.maven.privateuploader.i18n.PrivateUploaderBundle
 import okhttp3.*
 import java.awt.BorderLayout
 import java.awt.Color
@@ -32,14 +34,15 @@ class PrivateRepoConfigurable : Configurable {
     private var usernameField = JBTextField()
     private var passwordField = JBPasswordField()
     private var repositoryIdField = JBTextField()
-    private var enabledCheckbox = JBCheckBox("启用私仓上传功能")
-    private var testConnectionButton = JButton("测试连接")
+    private var enabledCheckbox = JBCheckBox()
+    private var testConnectionButton = JButton()
     private var testResultLabel = JBLabel("")
+    private var languageComboBox = JComboBox<LanguageSettings.Language>()
 
     private var mainPanel: JPanel? = null
 
     override fun getDisplayName(): @NlsContexts.ConfigurableName String {
-        return "Maven私仓上传"
+        return PrivateUploaderBundle.message("private.repo.config.name")
     }
 
     override fun createComponent(): JComponent? {
@@ -50,12 +53,28 @@ class PrivateRepoConfigurable : Configurable {
     }
 
     private fun createMainPanel(): JPanel {
+        // 初始化语言选择下拉框
+        languageComboBox = JComboBox(LanguageSettings.Language.values())
+        languageComboBox.selectedItem = LanguageSettings.getInstance().language
+        languageComboBox.addActionListener {
+            val selectedLanguage = languageComboBox.selectedItem as? LanguageSettings.Language
+            selectedLanguage?.let {
+                LanguageSettings.getInstance().language = it
+                // 重新加载UI文本
+                updateUITexts()
+            }
+        }
+        
+        // 初始化UI文本
+        updateUITexts()
+        
         val formBuilder = FormBuilder.createFormBuilder()
-            .addLabeledComponent(JBLabel("私仓URL:"), repositoryUrlField, 1, false)
-            .addLabeledComponent(JBLabel("用户名:"), usernameField, 1, false)
-            .addLabeledComponent(JBLabel("密码:"), passwordField, 1, false)
-            .addLabeledComponent(JBLabel("仓库ID:"), repositoryIdField, 1, false)
+            .addLabeledComponent(JBLabel("${PrivateUploaderBundle.message("private.repo.config.url.label")}:"), repositoryUrlField, 1, false)
+            .addLabeledComponent(JBLabel("${PrivateUploaderBundle.message("private.repo.config.username.label")}:"), usernameField, 1, false)
+            .addLabeledComponent(JBLabel("${PrivateUploaderBundle.message("private.repo.config.password.label")}:"), passwordField, 1, false)
+            .addLabeledComponent(JBLabel("${PrivateUploaderBundle.message("private.repo.config.repository.id.label")}:"), repositoryIdField, 1, false)
             .addComponentFillVertically(enabledCheckbox, 0)
+            .addLabeledComponent(JBLabel("${PrivateUploaderBundle.message("language.label")}:"), languageComboBox, 1, false)
 
         val configPanel = formBuilder.panel
         configPanel.border = JBUI.Borders.empty(8)
@@ -72,6 +91,14 @@ class PrivateRepoConfigurable : Configurable {
         main.add(testPanel, BorderLayout.SOUTH)
 
         return main
+    }
+    
+    /**
+     * 更新UI文本（语言切换时调用）
+     */
+    private fun updateUITexts() {
+        enabledCheckbox.text = PrivateUploaderBundle.message("private.repo.config.enabled.label")
+        testConnectionButton.text = PrivateUploaderBundle.message("config.test.connection")
     }
 
     /**
@@ -101,12 +128,12 @@ class PrivateRepoConfigurable : Configurable {
         val infoText = """
             <html>
             <body>
-                <p><b>Maven私仓上传配置</b></p>
-                <p>请配置Maven私仓的连接信息：</p>
+                <p><b>${PrivateUploaderBundle.message("config.info.title")}</b></p>
+                <p>${PrivateUploaderBundle.message("config.info.description")}</p>
                 <ul>
-                    <li><b>私仓URL</b>: Maven私仓的完整URL地址（如：http://nexus.company.com/repository/maven-releases/）</li>
-                    <li><b>用户名/密码</b>: 用于认证的凭证</li>
-                    <li><b>仓库ID</b>: 可选，用于某些私仓系统（如Nexus的特定仓库ID）</li>
+                    <li><b>${PrivateUploaderBundle.message("config.info.url")}</b>: ${PrivateUploaderBundle.message("config.info.url.desc")}</li>
+                    <li><b>${PrivateUploaderBundle.message("config.info.credentials")}</b>: ${PrivateUploaderBundle.message("config.info.credentials.desc")}</li>
+                    <li><b>${PrivateUploaderBundle.message("config.info.repository.id")}</b>: ${PrivateUploaderBundle.message("config.info.repository.id.desc")}</li>
                 </ul>
             </body>
             </html>
@@ -128,12 +155,14 @@ class PrivateRepoConfigurable : Configurable {
     override fun isModified(): Boolean {
         val settings = PrivateRepoSettings.getInstance()
         val currentConfig = settings.config
+        val languageSettings = LanguageSettings.getInstance()
 
         return repositoryUrlField.text != currentConfig.repositoryUrl ||
                 usernameField.text != currentConfig.username ||
                 String(passwordField.password) != currentConfig.password ||
                 repositoryIdField.text != currentConfig.repositoryId ||
-                enabledCheckbox.isSelected != currentConfig.enabled
+                enabledCheckbox.isSelected != currentConfig.enabled ||
+                (languageComboBox.selectedItem as? LanguageSettings.Language) != languageSettings.language
     }
 
     @Throws(ConfigurationException::class)
@@ -148,14 +177,20 @@ class PrivateRepoConfigurable : Configurable {
             enabled = enabledCheckbox.isSelected
         )
 
+        // 保存语言设置
+        val selectedLanguage = languageComboBox.selectedItem as? LanguageSettings.Language
+        selectedLanguage?.let {
+            LanguageSettings.getInstance().language = it
+        }
+        
         // 验证配置
         if (newConfig.enabled && !newConfig.isValid()) {
-            throw ConfigurationException("启用功能时，私仓URL、用户名和密码不能为空")
+            throw ConfigurationException(PrivateUploaderBundle.message("error.empty.credentials"))
         }
 
         // 验证URL格式
         if (newConfig.repositoryUrl.isNotBlank() && !isValidUrl(newConfig.repositoryUrl)) {
-            throw ConfigurationException("私仓URL格式无效，请输入有效的HTTP/HTTPS URL")
+            throw ConfigurationException(PrivateUploaderBundle.message("error.invalid.url"))
         }
 
         settings.config = newConfig
@@ -165,12 +200,17 @@ class PrivateRepoConfigurable : Configurable {
     override fun reset() {
         val settings = PrivateRepoSettings.getInstance()
         val config = settings.config
+        val languageSettings = LanguageSettings.getInstance()
 
         repositoryUrlField.text = config.repositoryUrl
         usernameField.text = config.username
         passwordField.text = config.password
         repositoryIdField.text = config.repositoryId
         enabledCheckbox.isSelected = config.enabled
+        languageComboBox.selectedItem = languageSettings.language
+        
+        // 更新UI文本
+        updateUITexts()
         
         // 重置测试结果
         testResultLabel.text = ""
@@ -219,21 +259,21 @@ class PrivateRepoConfigurable : Configurable {
         if (testConfig.repositoryUrl.isBlank()) {
             logger.warn("【验证失败】私仓URL为空")
             System.out.println("【验证失败】私仓URL为空")
-            showTestResult("私仓URL不能为空", false)
+            showTestResult(PrivateUploaderBundle.message("config.test.url.empty"), false)
             return
         }
 
         if (!isValidUrl(testConfig.repositoryUrl)) {
             logger.warn("【验证失败】私仓URL格式无效: ${testConfig.repositoryUrl}")
             System.out.println("【验证失败】私仓URL格式无效")
-            showTestResult("私仓URL格式无效，请输入有效的HTTP/HTTPS URL", false)
+            showTestResult(PrivateUploaderBundle.message("config.test.url.invalid"), false)
             return
         }
 
         if (testConfig.username.isBlank() || testConfig.password.isBlank()) {
             logger.warn("【验证失败】用户名或密码为空")
             System.out.println("【验证失败】用户名或密码为空")
-            showTestResult("用户名和密码不能为空", false)
+            showTestResult(PrivateUploaderBundle.message("config.test.credentials.empty"), false)
             return
         }
 
@@ -245,7 +285,7 @@ class PrivateRepoConfigurable : Configurable {
         logger.info("【更新UI状态】显示测试中...")
         System.out.println("【更新UI状态】显示测试中...")
         testConnectionButton.isEnabled = false
-        testResultLabel.text = "正在连接中... (测试URL: $testUrl)"
+        testResultLabel.text = PrivateUploaderBundle.message("config.test.connecting", testUrl)
         testResultLabel.foreground = Color.GRAY
 
         // 在后台线程执行测试
@@ -269,14 +309,14 @@ class PrivateRepoConfigurable : Configurable {
                 logger.error("【后台线程】连接测试时发生异常", e)
                 System.out.println("【后台线程】连接测试时发生异常: ${e.javaClass.simpleName} - ${e.message}")
                 e.printStackTrace()
-                result = TestResult(false, "测试失败: ${e.javaClass.simpleName} - ${e.message ?: "未知错误"}")
+                result = TestResult(false, "${PrivateUploaderBundle.message("config.test.failed")}: ${e.javaClass.simpleName} - ${e.message ?: "未知错误"}")
             } finally {
                 logger.info("【后台线程】进入finally块")
                 System.out.println("【后台线程】进入finally块")
                 // 确保UI更新，即使发生异常也要恢复按钮状态
-                val finalResult = result ?: TestResult(false, "测试失败: 未返回结果")
+                val finalResult = result ?: TestResult(false, PrivateUploaderBundle.message("config.test.no.result"))
                 val finalMessage = if (exception != null) {
-                    "测试失败: ${exception.javaClass.simpleName} - ${exception.message ?: "未知错误"}"
+                    "${PrivateUploaderBundle.message("config.test.failed")}: ${exception.javaClass.simpleName} - ${exception.message ?: "未知错误"}"
                 } else {
                     finalResult.message
                 }
@@ -305,7 +345,7 @@ class PrivateRepoConfigurable : Configurable {
                         // 即使UI更新失败，也要恢复按钮状态
                         try {
                             testConnectionButton.isEnabled = true
-                            testResultLabel.text = "UI更新失败: ${e.message}"
+                            testResultLabel.text = "${PrivateUploaderBundle.message("config.test.ui.update.failed")}: ${e.message}"
                             testResultLabel.foreground = Color.RED
                         } catch (e2: Throwable) {
                             logger.error("【EDT线程】恢复按钮状态时发生异常", e2)
@@ -355,13 +395,13 @@ class PrivateRepoConfigurable : Configurable {
             logger.info("URL解析成功: $url")
         } catch (e: java.net.URISyntaxException) {
             logger.warn("URL格式错误", e)
-            return TestResult(false, "URL格式错误：${e.message}\n地址: $testUrl")
+            return TestResult(false, "${PrivateUploaderBundle.message("config.test.url.parse.error", e.message ?: "")}\n地址: $testUrl")
         } catch (e: java.net.MalformedURLException) {
             logger.warn("URL格式错误", e)
-            return TestResult(false, "URL格式错误：${e.message}\n地址: $testUrl")
+            return TestResult(false, "${PrivateUploaderBundle.message("config.test.url.parse.error", e.message ?: "")}\n地址: $testUrl")
         } catch (e: Throwable) {
             logger.error("URL解析时发生未知异常", e)
-            return TestResult(false, "URL解析失败：${e.javaClass.simpleName} - ${e.message}\n地址: $testUrl")
+            return TestResult(false, "${PrivateUploaderBundle.message("config.test.url.parse.failed", e.javaClass.simpleName, e.message ?: "")}\n地址: $testUrl")
         }
 
         val httpClient = createHttpClient(config)
@@ -393,48 +433,48 @@ class PrivateRepoConfigurable : Configurable {
 
                 when {
                     statusCode in 200..299 -> {
-                        TestResult(true, "连接正常 (HTTP $statusCode, 耗时: ${elapsedTime}ms)")
+                        TestResult(true, PrivateUploaderBundle.message("config.test.success", statusCode, elapsedTime))
                     }
                     statusCode == 401 -> {
-                        TestResult(false, "认证失败：用户名或密码错误（HTTP 401）\n地址: $testUrl")
+                        TestResult(false, "${PrivateUploaderBundle.message("config.test.auth.failed")}\n地址: $testUrl")
                     }
                     statusCode == 403 -> {
-                        TestResult(false, "权限不足：当前用户没有访问权限（HTTP 403）\n地址: $testUrl")
+                        TestResult(false, "${PrivateUploaderBundle.message("config.test.permission.denied")}\n地址: $testUrl")
                     }
                     statusCode == 404 -> {
-                        TestResult(false, "地址不存在：私仓URL无法访问（HTTP 404）\n地址: $testUrl")
+                        TestResult(false, "${PrivateUploaderBundle.message("config.test.not.found")}\n地址: $testUrl")
                     }
                     else -> {
-                        TestResult(false, "连接失败：HTTP $statusCode - ${response.message}\n地址: $testUrl")
+                        TestResult(false, "${PrivateUploaderBundle.message("config.test.connection.failed", statusCode, response.message)}\n地址: $testUrl")
                     }
                 }
             }
         } catch (e: java.net.SocketTimeoutException) {
             logger.warn("连接超时", e)
-            TestResult(false, "连接超时：无法在指定时间内连接到私仓（已等待5秒）\n地址: $testUrl")
+            TestResult(false, "${PrivateUploaderBundle.message("config.test.timeout")}\n地址: $testUrl")
         } catch (e: java.io.InterruptedIOException) {
             // OkHttp超时时可能抛出InterruptedIOException
             logger.warn("连接超时（InterruptedIOException）", e)
-            TestResult(false, "连接超时：无法在指定时间内连接到私仓（已等待5秒）\n地址: $testUrl")
+            TestResult(false, "${PrivateUploaderBundle.message("config.test.timeout")}\n地址: $testUrl")
         } catch (e: java.net.UnknownHostException) {
             logger.warn("无法解析主机名", e)
-            TestResult(false, "地址不可达：无法解析主机名（${e.message}）\n地址: $testUrl")
+            TestResult(false, "${PrivateUploaderBundle.message("config.test.host.unreachable", e.message ?: "")}\n地址: $testUrl")
         } catch (e: java.net.ConnectException) {
             logger.warn("连接被拒绝", e)
-            TestResult(false, "连接被拒绝：无法连接到私仓服务器\n地址: $testUrl")
+            TestResult(false, "${PrivateUploaderBundle.message("config.test.connection.refused")}\n地址: $testUrl")
         } catch (e: javax.net.ssl.SSLException) {
             logger.warn("SSL连接失败", e)
-            TestResult(false, "SSL连接失败：${e.message}\n地址: $testUrl")
+            TestResult(false, "${PrivateUploaderBundle.message("config.test.ssl.failed", e.message ?: "")}\n地址: $testUrl")
         } catch (e: java.net.SocketException) {
             logger.warn("网络连接错误", e)
-            TestResult(false, "网络连接错误：${e.message}\n地址: $testUrl")
+            TestResult(false, "${PrivateUploaderBundle.message("config.test.network.error", e.message ?: "")}\n地址: $testUrl")
         } catch (e: java.io.IOException) {
             logger.error("IO异常", e)
-            TestResult(false, "网络IO错误：${e.message ?: e.javaClass.simpleName}\n地址: $testUrl")
+            TestResult(false, "${PrivateUploaderBundle.message("config.test.io.error", e.message ?: e.javaClass.simpleName)}\n地址: $testUrl")
         } catch (e: Throwable) {
             // 捕获所有其他异常，包括Error
             logger.error("连接测试时发生未知异常", e)
-            TestResult(false, "测试失败：${e.javaClass.simpleName} - ${e.message ?: "未知错误"}\n地址: $testUrl")
+            TestResult(false, "${PrivateUploaderBundle.message("config.test.failed")}: ${e.javaClass.simpleName} - ${e.message ?: "未知错误"}\n地址: $testUrl")
         }
     }
 
