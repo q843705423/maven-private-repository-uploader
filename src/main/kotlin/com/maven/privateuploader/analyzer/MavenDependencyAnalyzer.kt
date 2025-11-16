@@ -315,29 +315,38 @@ class MavenDependencyAnalyzer(private val project: Project) {
                         analyzedParents.add(parentKey)
                         logger.info("【父POM分析】添加父POM: ${parentDependency.getGAV()} (${parentPomPath.absolutePath})")
                         
-                        // 递归分析父POM的父POM
+                        // 递归分析父POM的父POM和BOM依赖
                         val pomParser = PomParser()
                         val pomInfo = pomParser.parsePom(parentPomPath)
-                        if (pomInfo != null && pomInfo.parent != null) {
-                            logger.info("【父POM分析】父POM ${parentDependency.getGAV()} 还有父POM: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}，开始递归分析")
-                            val parentParentDependency = pomParser.parentToDependencyInfo(pomInfo.parent)
-                            
-                            // 添加父POM的父POM到依赖列表（即使本地文件不存在）
-                            val parentParentKey = "${parentParentDependency.groupId}:${parentParentDependency.artifactId}:${parentParentDependency.version}"
-                            if (!analyzedParents.contains(parentParentKey)) {
-                                dependencies.add(parentParentDependency)
-                                analyzedParents.add(parentParentKey)
-                                logger.info("【父POM分析】添加父POM的父POM: ${parentParentDependency.getGAV()} (本地文件${if (parentParentDependency.localPath.isEmpty()) "不存在" else "存在"})")
-                            }
-                            
-                            // 如果本地文件存在，继续递归分析
-                            if (parentParentDependency.localPath.isNotEmpty()) {
-                                analyzeParentPomFromFile(parentParentDependency.localPath, dependencies, analyzedParents)
+                        if (pomInfo != null) {
+                            // 处理父POM的父POM
+                            if (pomInfo.parent != null) {
+                                logger.info("【父POM分析】父POM ${parentDependency.getGAV()} 还有父POM: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}，开始递归分析")
+                                val parentParentDependency = pomParser.parentToDependencyInfo(pomInfo.parent)
+                                
+                                // 添加父POM的父POM到依赖列表（即使本地文件不存在）
+                                val parentParentKey = "${parentParentDependency.groupId}:${parentParentDependency.artifactId}:${parentParentDependency.version}"
+                                if (!analyzedParents.contains(parentParentKey)) {
+                                    dependencies.add(parentParentDependency)
+                                    analyzedParents.add(parentParentKey)
+                                    logger.info("【父POM分析】添加父POM的父POM: ${parentParentDependency.getGAV()} (本地文件${if (parentParentDependency.localPath.isEmpty()) "不存在" else "存在"})")
+                                }
+                                
+                                // 如果本地文件存在，继续递归分析
+                                if (parentParentDependency.localPath.isNotEmpty()) {
+                                    analyzeParentPomFromFile(parentParentDependency.localPath, dependencies, analyzedParents)
+                                } else {
+                                    logger.info("【父POM分析】父POM ${parentParentDependency.getGAV()} 本地文件不存在，无法继续递归分析")
+                                }
                             } else {
-                                logger.info("【父POM分析】父POM ${parentParentDependency.getGAV()} 本地文件不存在，无法继续递归分析")
+                                logger.debug("父POM ${parentDependency.getGAV()} 没有父POM，递归结束")
                             }
-                        } else {
-                            logger.debug("父POM ${parentDependency.getGAV()} 没有父POM，递归结束")
+                            
+                            // 处理父POM中的BOM依赖
+                            if (pomInfo.bomDependencies.isNotEmpty()) {
+                                logger.info("【BOM分析】父POM ${parentDependency.getGAV()} 包含 ${pomInfo.bomDependencies.size} 个BOM依赖，开始分析")
+                                analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
+                            }
                         }
                     } else {
                         logger.warn("父POM文件不存在: ${parentPomPath.absolutePath}")
@@ -431,8 +440,84 @@ class MavenDependencyAnalyzer(private val project: Project) {
             } else {
                 logger.debug("POM ${currentKey} 没有父POM，递归结束")
             }
+            
+            // 处理当前POM中的BOM依赖
+            if (pomInfo.bomDependencies.isNotEmpty()) {
+                logger.info("【BOM分析】POM ${currentKey} 包含 ${pomInfo.bomDependencies.size} 个BOM依赖，开始分析")
+                analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
+            }
         } catch (e: Exception) {
             logger.error("从文件分析父POM时发生错误: $pomFilePath", e)
+        }
+    }
+
+    /**
+     * 分析BOM依赖（递归处理BOM及其父POM和子BOM）
+     * 
+     * @param bomDependencies BOM依赖列表
+     * @param dependencies 依赖集合
+     * @param analyzedParents 已分析的父POM集合（用于避免循环依赖）
+     * @param pomParser POM解析器
+     */
+    private fun analyzeBomDependencies(
+        bomDependencies: List<PomParser.BomDependency>,
+        dependencies: MutableSet<DependencyInfo>,
+        analyzedParents: MutableSet<String>,
+        pomParser: PomParser
+    ) {
+        bomDependencies.forEach { bom ->
+            try {
+                val bomDependency = pomParser.bomToDependencyInfo(bom)
+                val bomKey = "${bomDependency.groupId}:${bomDependency.artifactId}:${bomDependency.version}"
+                
+                // 检查是否已经分析过（避免循环依赖）
+                if (analyzedParents.contains(bomKey)) {
+                    logger.debug("【BOM分析】BOM $bomKey 已分析过，跳过（避免循环依赖）")
+                    return@forEach
+                }
+                
+                // 添加BOM到依赖列表（即使本地文件不存在）
+                dependencies.add(bomDependency)
+                analyzedParents.add(bomKey)
+                logger.info("【BOM分析】添加BOM依赖: ${bomDependency.getGAV()} (本地文件${if (bomDependency.localPath.isEmpty()) "不存在" else "存在"})")
+                
+                // 如果本地文件存在，递归分析BOM的父POM和子BOM
+                if (bomDependency.localPath.isNotEmpty()) {
+                    val bomPomFile = File(bomDependency.localPath)
+                    if (bomPomFile.exists() && bomPomFile.isFile) {
+                        val bomPomInfo = pomParser.parsePom(bomPomFile)
+                        if (bomPomInfo != null) {
+                            // 递归分析BOM的父POM
+                            if (bomPomInfo.parent != null) {
+                                logger.info("【BOM分析】BOM ${bomDependency.getGAV()} 还有父POM: ${bomPomInfo.parent.groupId}:${bomPomInfo.parent.artifactId}:${bomPomInfo.parent.version}，开始递归分析")
+                                val bomParentDependency = pomParser.parentToDependencyInfo(bomPomInfo.parent)
+                                
+                                val bomParentKey = "${bomParentDependency.groupId}:${bomParentDependency.artifactId}:${bomParentDependency.version}"
+                                if (!analyzedParents.contains(bomParentKey)) {
+                                    dependencies.add(bomParentDependency)
+                                    analyzedParents.add(bomParentKey)
+                                    logger.info("【BOM分析】添加BOM的父POM: ${bomParentDependency.getGAV()} (本地文件${if (bomParentDependency.localPath.isEmpty()) "不存在" else "存在"})")
+                                }
+                                
+                                // 如果本地文件存在，继续递归分析
+                                if (bomParentDependency.localPath.isNotEmpty()) {
+                                    analyzeParentPomFromFile(bomParentDependency.localPath, dependencies, analyzedParents)
+                                }
+                            }
+                            
+                            // 递归分析BOM中的子BOM依赖
+                            if (bomPomInfo.bomDependencies.isNotEmpty()) {
+                                logger.info("【BOM分析】BOM ${bomDependency.getGAV()} 包含 ${bomPomInfo.bomDependencies.size} 个子BOM依赖，开始递归分析")
+                                analyzeBomDependencies(bomPomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
+                            }
+                        }
+                    }
+                } else {
+                    logger.info("【BOM分析】BOM ${bomDependency.getGAV()} 本地文件不存在，无法继续递归分析")
+                }
+            } catch (e: Exception) {
+                logger.error("【BOM分析】分析BOM依赖 ${bom.groupId}:${bom.artifactId}:${bom.version} 时发生错误", e)
+            }
         }
     }
 
