@@ -144,7 +144,44 @@ class DependencyTableModel : AbstractTableModel() {
          * 创建带渲染器的表格
          */
         fun createTable(): JTable {
-            val table = JTable(DependencyTableModel())
+            val model = DependencyTableModel()
+            val table = object : JTable(model) {
+                override fun getToolTipText(e: java.awt.event.MouseEvent?): String? {
+                    if (e == null) return null
+                    
+                    val point = e.point
+                    val row = rowAtPoint(point)
+                    val column = columnAtPoint(point)
+                    
+                    if (row < 0 || column < 0) return null
+                    
+                    val tableColumn = DependencyTableColumn.getByIndex(column)
+                    val dependency = model.getDependencyAt(row)
+                    
+                    if (tableColumn == null || dependency == null) return null
+                    
+                    // 根据列类型返回不同的tooltip
+                    return when (tableColumn) {
+                        DependencyTableColumn.STATUS -> {
+                            when (dependency.checkStatus) {
+                                CheckStatus.EXISTS -> "该依赖已存在于私仓中，无需上传"
+                                CheckStatus.MISSING -> "该依赖在私仓中缺失，需要上传到私仓"
+                                CheckStatus.CHECKING -> "正在检查该依赖在私仓中的状态..."
+                                CheckStatus.ERROR -> "检查私仓状态时出错: ${dependency.errorMessage.ifEmpty { "未知错误" }}"
+                                CheckStatus.UNKNOWN -> "尚未检查该依赖在私仓中的状态，请点击'重新检查私仓'按钮"
+                            }
+                        }
+                        DependencyTableColumn.LOCAL_PATH -> {
+                            if (dependency.isLocalFileExists()) {
+                                "本地文件存在: ${dependency.localPath}"
+                            } else {
+                                "本地文件不存在！\n这是预期的本地仓库路径（根据Maven规范计算）\n实际文件可能已被删除或尚未下载"
+                            }
+                        }
+                        else -> null
+                    }
+                }
+            }
 
             // 根据列配置设置渲染器和编辑器
             DependencyTableColumn.allColumns.forEachIndexed { index, column ->
@@ -247,9 +284,9 @@ class DependencyTableModel : AbstractTableModel() {
                         SimpleTextAttributes.STYLE_ITALIC,
                         java.awt.Color.GRAY
                     ))
-                    append(" [文件不存在]", SimpleTextAttributes(
-                        SimpleTextAttributes.STYLE_ITALIC,
-                        java.awt.Color(128, 128, 128) // 更浅的灰色
+                    append(" ⚠ 文件不存在", SimpleTextAttributes(
+                        SimpleTextAttributes.STYLE_BOLD or SimpleTextAttributes.STYLE_ITALIC,
+                        java.awt.Color(255, 140, 0) // 橙色，更醒目
                     ))
                 }
             } else {
