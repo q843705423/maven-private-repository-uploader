@@ -375,11 +375,11 @@ class MavenDependencyAnalyzer(private val project: Project) {
                                 analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
                             }
                             
-                            // 处理父POM中的插件
-                            if (pomInfo.plugins.isNotEmpty()) {
-                                logger.info("【插件分析】父POM ${parentDependency.getGAV()} 包含 ${pomInfo.plugins.size} 个插件，开始分析")
-                                analyzePlugins(pomInfo.plugins, dependencies, pomParser)
-                            }
+                            // 不处理父POM中的插件
+                            // 原因：按照 Maven 规则，子 POM 的 properties 会覆盖父 POM 的 properties
+                            // 所以插件的版本应该从子 POM 的 properties 中获取（已经合并了父 POM 的 properties）
+                            // 如果解析父 POM 的插件，会使用父 POM 自己的 properties，导致版本不正确
+                            // 只解析当前 POM 的插件即可，因为子 POM 的插件配置会继承父 POM 的，但使用子 POM 的 properties
                         }
                     } else {
                         logger.warn("父POM文件不存在: ${parentPomPath.absolutePath}")
@@ -480,11 +480,9 @@ class MavenDependencyAnalyzer(private val project: Project) {
                 analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedParents, pomParser)
             }
             
-            // 处理当前POM中的插件
-            if (pomInfo.plugins.isNotEmpty()) {
-                logger.info("【插件分析】POM ${currentKey} 包含 ${pomInfo.plugins.size} 个插件，开始分析")
-                analyzePlugins(pomInfo.plugins, dependencies, pomParser)
-            }
+            // 不处理当前POM中的插件（因为这是递归解析父 POM 链的方法）
+            // 插件的解析应该在 analyzeMavenProject 方法中完成，使用当前项目的 POM 文件
+            // 这样可以确保使用当前项目的 properties（已经合并了父 POM 的 properties，但子 POM 的会覆盖父 POM 的）
         } catch (e: Exception) {
             logger.error("从文件分析父POM时发生错误: $pomFilePath", e)
         }
