@@ -136,7 +136,8 @@ class MavenDependencyAnalyzer(private val project: Project) {
             var directDependencyCount = 0
             mavenProject.dependencies.forEachIndexed { index, dependency ->
                 logger.debug("直接依赖 $index: ${dependency.groupId}:${dependency.artifactId}:${dependency.version}, 文件: ${dependency.file}, 包装: ${dependency.packaging}")
-                if (shouldIncludeDependency(dependency, mavenProject)) {
+                // 直接依赖即使 scope 是 test 也应该包含（因为这是项目明确声明的依赖）
+                if (shouldIncludeDependency(dependency, mavenProject, isDirectDependency = true)) {
                     val dependencyInfo = createDependencyInfo(dependency)
                     dependencies.add(dependencyInfo)
                     directDependencyCount++
@@ -212,8 +213,9 @@ class MavenDependencyAnalyzer(private val project: Project) {
                 try {
                     logger.debug("依赖树节点 $index: ${dependency.groupId}:${dependency.artifactId}:${dependency.version}, 文件: ${dependency.file}, 范围: ${dependency.scope}")
 
-                    // 过滤掉项目的自有模块和测试依赖
-                    if (shouldIncludeDependency(dependency, mavenProject)) {
+                    // 这里的依赖都是直接依赖（因为 allDependencies 只包含 mavenProject.dependencies）
+                    // 直接依赖即使 scope 是 test 也应该包含（因为这是项目明确声明的依赖）
+                    if (shouldIncludeDependency(dependency, mavenProject, isDirectDependency = true)) {
                         val dependencyInfo = createDependencyInfo(dependency)
                         dependencies.add(dependencyInfo)
                         logger.debug("添加依赖树依赖: ${dependencyInfo.getGAV()}")
@@ -382,8 +384,17 @@ class MavenDependencyAnalyzer(private val project: Project) {
 
     /**
      * 判断是否应该包含此依赖
+     * 
+     * @param artifact 依赖项
+     * @param currentProject 当前 Maven 项目
+     * @param isDirectDependency 是否是直接依赖（在主 POM 中声明的），默认为 false
+     *                           直接依赖即使 scope 是 test 也应该包含，因为这是项目明确声明的依赖
      */
-    private fun shouldIncludeDependency(artifact: org.jetbrains.idea.maven.model.MavenArtifact, currentProject: MavenProject): Boolean {
+    private fun shouldIncludeDependency(
+        artifact: org.jetbrains.idea.maven.model.MavenArtifact, 
+        currentProject: MavenProject,
+        isDirectDependency: Boolean = false
+    ): Boolean {
         // 过滤条件
         if (artifact.file == null) {
             logger.debug("跳过无文件的依赖: ${artifact.groupId}:${artifact.artifactId}")
@@ -397,7 +408,8 @@ class MavenDependencyAnalyzer(private val project: Project) {
         }
 
         // 跳过测试依赖（但POM类型的依赖不受scope限制）
-        if (artifact.packaging == "jar" && (artifact.scope == "test" || artifact.scope == "provided")) {
+        // 直接依赖即使 scope 是 test 也应该包含，因为这是项目明确声明的依赖
+        if (!isDirectDependency && artifact.packaging == "jar" && (artifact.scope == "test" || artifact.scope == "provided")) {
             logger.debug("跳过测试/提供依赖: ${artifact.groupId}:${artifact.artifactId} (${artifact.scope})")
             return false
         }
