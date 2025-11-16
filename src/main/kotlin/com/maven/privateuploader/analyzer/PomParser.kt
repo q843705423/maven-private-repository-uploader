@@ -251,6 +251,21 @@ class PomParser {
     }
     
     /**
+     * 检查版本字符串是否包含未解析的 Maven 属性占位符
+     * Maven 属性占位符格式：${property.name}
+     * 
+     * @param version 版本字符串
+     * @return 如果包含未解析的占位符返回 true，否则返回 false
+     */
+    private fun containsUnresolvedPropertyPlaceholder(version: String?): Boolean {
+        if (version.isNullOrBlank()) {
+            return false
+        }
+        // 检查是否包含 ${...} 格式的占位符
+        return version.contains(Regex("\\$\\{[^}]+\\}"))
+    }
+    
+    /**
      * 转换 Maven Parent 为 ParentInfo
      */
     private fun convertParent(parent: Parent): ParentInfo {
@@ -279,6 +294,12 @@ class PomParser {
                     val version = dep.version
                     
                     if (!groupId.isNullOrBlank() && !artifactId.isNullOrBlank() && !version.isNullOrBlank()) {
+                        // 过滤掉包含未解析属性占位符的版本
+                        if (containsUnresolvedPropertyPlaceholder(version)) {
+                            logger.debug("跳过包含未解析属性占位符的 BOM 依赖: $groupId:$artifactId:$version")
+                            return@forEach
+                        }
+                        
                         bomDependencies.add(
                             BomDependency(
                                 groupId = groupId,
@@ -301,15 +322,22 @@ class PomParser {
     private fun convertDependency(dep: Dependency): TransitiveDependency? {
         val groupId = dep.groupId
         val artifactId = dep.artifactId
+        val version = dep.version
         
         if (groupId.isNullOrBlank() || artifactId.isNullOrBlank()) {
+            return null
+        }
+        
+        // 如果版本包含未解析的属性占位符，返回 null（跳过该依赖）
+        if (containsUnresolvedPropertyPlaceholder(version)) {
+            logger.debug("跳过包含未解析属性占位符的依赖: $groupId:$artifactId:$version")
             return null
         }
         
         return TransitiveDependency(
             groupId = groupId,
             artifactId = artifactId,
-            version = dep.version,
+            version = version,
             scope = dep.scope,
             type = dep.type
         )
@@ -349,6 +377,12 @@ class PomParser {
             return null
         }
         
+        // 如果版本包含未解析的属性占位符，返回 null（跳过该插件）
+        if (containsUnresolvedPropertyPlaceholder(version)) {
+            logger.debug("跳过包含未解析属性占位符的插件: $groupId:$artifactId:$version")
+            return null
+        }
+        
         return PluginDependency(
             groupId = groupId,
             artifactId = artifactId,
@@ -379,7 +413,13 @@ class PomParser {
      * 将 ParentInfo 转换为 DependencyInfo
      * 即使本地文件不存在，也会创建 DependencyInfo 对象，以便在列表中显示该依赖
      */
-    fun parentToDependencyInfo(parent: ParentInfo): DependencyInfo {
+    fun parentToDependencyInfo(parent: ParentInfo): DependencyInfo? {
+        // 如果版本包含未解析的属性占位符，返回 null（跳过该依赖）
+        if (containsUnresolvedPropertyPlaceholder(parent.version)) {
+            logger.debug("跳过包含未解析属性占位符的父 POM: ${parent.groupId}:${parent.artifactId}:${parent.version}")
+            return null
+        }
+        
         val pomFile = buildLocalPomPath(parent.groupId, parent.artifactId, parent.version)
         val localPath = if (pomFile.exists()) {
             pomFile.absolutePath
@@ -404,7 +444,13 @@ class PomParser {
      * 将 BomDependency 转换为 DependencyInfo
      * 即使本地文件不存在，也会创建 DependencyInfo 对象，以便在列表中显示该依赖
      */
-    fun bomToDependencyInfo(bom: BomDependency): DependencyInfo {
+    fun bomToDependencyInfo(bom: BomDependency): DependencyInfo? {
+        // 如果版本包含未解析的属性占位符，返回 null（跳过该依赖）
+        if (containsUnresolvedPropertyPlaceholder(bom.version)) {
+            logger.debug("跳过包含未解析属性占位符的 BOM: ${bom.groupId}:${bom.artifactId}:${bom.version}")
+            return null
+        }
+        
         val pomFile = buildLocalPomPath(bom.groupId, bom.artifactId, bom.version)
         val localPath = if (pomFile.exists()) {
             pomFile.absolutePath
@@ -433,6 +479,12 @@ class PomParser {
         // 如果 version 为空，无法构建路径，返回 null
         if (transitive.version.isNullOrBlank()) {
             logger.debug("传递依赖 ${transitive.groupId}:${transitive.artifactId} 没有版本信息，跳过")
+            return null
+        }
+        
+        // 如果版本包含未解析的属性占位符，返回 null（跳过该依赖）
+        if (containsUnresolvedPropertyPlaceholder(transitive.version)) {
+            logger.debug("跳过包含未解析属性占位符的传递依赖: ${transitive.groupId}:${transitive.artifactId}:${transitive.version}")
             return null
         }
         
@@ -481,7 +533,13 @@ class PomParser {
      * Maven 插件的 packaging 是 maven-plugin，但实际文件是 jar
      * 即使本地文件不存在，也会创建 DependencyInfo 对象，以便在列表中显示该依赖
      */
-    fun pluginToDependencyInfo(plugin: PluginDependency): DependencyInfo {
+    fun pluginToDependencyInfo(plugin: PluginDependency): DependencyInfo? {
+        // 如果版本包含未解析的属性占位符，返回 null（跳过该插件）
+        if (containsUnresolvedPropertyPlaceholder(plugin.version)) {
+            logger.debug("跳过包含未解析属性占位符的插件: ${plugin.groupId}:${plugin.artifactId}:${plugin.version}")
+            return null
+        }
+        
         // Maven 插件的文件路径：groupId/artifactId/version/artifactId-version.jar
         val localRepoPath = getLocalMavenRepositoryPath()
         val jarFile = File(localRepoPath,

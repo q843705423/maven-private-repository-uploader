@@ -311,16 +311,20 @@ class MavenDependencyAnalyzer(private val project: Project) {
                 logger.info("【依赖POM分析】依赖 $dependencyKey 有父 POM: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}，开始递归分析")
                 val parentDependency = pomParser.parentToDependencyInfo(pomInfo.parent)
                 
-                val parentKey = "${parentDependency.groupId}:${parentDependency.artifactId}:${parentDependency.version}"
-                if (!analyzedDependencyPoms.contains(parentKey)) {
-                    dependencies.add(parentDependency)
-                    analyzedDependencyPoms.add(parentKey)
-                    logger.info("【依赖POM分析】添加依赖的父 POM: ${parentDependency.getGAV()} (本地文件${if (parentDependency.localPath.isEmpty()) "不存在" else "存在"})")
-                    
-                    // 如果本地文件存在，继续递归分析父 POM
-                    if (parentDependency.localPath.isNotEmpty()) {
-                        analyzeParentPomFromFile(parentDependency.localPath, dependencies, analyzedDependencyPoms, pluginDependencies)
+                if (parentDependency != null) {
+                    val parentKey = "${parentDependency.groupId}:${parentDependency.artifactId}:${parentDependency.version}"
+                    if (!analyzedDependencyPoms.contains(parentKey)) {
+                        dependencies.add(parentDependency)
+                        analyzedDependencyPoms.add(parentKey)
+                        logger.info("【依赖POM分析】添加依赖的父 POM: ${parentDependency.getGAV()} (本地文件${if (parentDependency.localPath.isEmpty()) "不存在" else "存在"})")
+                        
+                        // 如果本地文件存在，继续递归分析父 POM
+                        if (parentDependency.localPath.isNotEmpty()) {
+                            analyzeParentPomFromFile(parentDependency.localPath, dependencies, analyzedDependencyPoms, pluginDependencies)
+                        }
                     }
+                } else {
+                    logger.debug("【依赖POM分析】父 POM 包含未解析的属性占位符，跳过: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}")
                 }
             }
             
@@ -520,19 +524,23 @@ class MavenDependencyAnalyzer(private val project: Project) {
                                 logger.info("【父POM分析】父POM ${parentDependency.getGAV()} 还有父POM: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}，开始递归分析")
                                 val parentParentDependency = pomParser.parentToDependencyInfo(pomInfo.parent)
                                 
-                                // 添加父POM的父POM到依赖列表（即使本地文件不存在）
-                                val parentParentKey = "${parentParentDependency.groupId}:${parentParentDependency.artifactId}:${parentParentDependency.version}"
-                                if (!analyzedParents.contains(parentParentKey)) {
-                                    dependencies.add(parentParentDependency)
-                                    analyzedParents.add(parentParentKey)
-                                    logger.info("【父POM分析】添加父POM的父POM: ${parentParentDependency.getGAV()} (本地文件${if (parentParentDependency.localPath.isEmpty()) "不存在" else "存在"})")
-                                }
-                                
-                                // 如果本地文件存在，继续递归分析
-                                if (parentParentDependency.localPath.isNotEmpty()) {
-                                    analyzeParentPomFromFile(parentParentDependency.localPath, dependencies, analyzedParents, pluginDependencies)
+                                if (parentParentDependency != null) {
+                                    // 添加父POM的父POM到依赖列表（即使本地文件不存在）
+                                    val parentParentKey = "${parentParentDependency.groupId}:${parentParentDependency.artifactId}:${parentParentDependency.version}"
+                                    if (!analyzedParents.contains(parentParentKey)) {
+                                        dependencies.add(parentParentDependency)
+                                        analyzedParents.add(parentParentKey)
+                                        logger.info("【父POM分析】添加父POM的父POM: ${parentParentDependency.getGAV()} (本地文件${if (parentParentDependency.localPath.isEmpty()) "不存在" else "存在"})")
+                                    }
+                                    
+                                    // 如果本地文件存在，继续递归分析
+                                    if (parentParentDependency.localPath.isNotEmpty()) {
+                                        analyzeParentPomFromFile(parentParentDependency.localPath, dependencies, analyzedParents, pluginDependencies)
+                                    } else {
+                                        logger.info("【父POM分析】父POM ${parentParentDependency.getGAV()} 本地文件不存在，无法继续递归分析")
+                                    }
                                 } else {
-                                    logger.info("【父POM分析】父POM ${parentParentDependency.getGAV()} 本地文件不存在，无法继续递归分析")
+                                    logger.debug("【父POM分析】父POM的父POM包含未解析的属性占位符，跳过: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}")
                                 }
                             } else {
                                 logger.debug("父POM ${parentDependency.getGAV()} 没有父POM，递归结束")
@@ -627,19 +635,23 @@ class MavenDependencyAnalyzer(private val project: Project) {
                 logger.info("【父POM分析】POM ${currentKey} 还有父POM: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}，开始递归分析")
                 val parentDependency = pomParser.parentToDependencyInfo(pomInfo.parent)
                 
-                // 添加父POM到依赖列表（即使本地文件不存在）
-                val parentKey = "${parentDependency.groupId}:${parentDependency.artifactId}:${parentDependency.version}"
-                if (!analyzedParents.contains(parentKey)) {
-                    dependencies.add(parentDependency)
-                    analyzedParents.add(parentKey)
-                    logger.info("【父POM分析】添加父POM: ${parentDependency.getGAV()} (本地文件${if (parentDependency.localPath.isEmpty()) "不存在" else "存在"})")
-                }
-                
-                // 如果本地文件存在，继续递归分析
-                if (parentDependency.localPath.isNotEmpty()) {
-                    analyzeParentPomFromFile(parentDependency.localPath, dependencies, analyzedParents, pluginDependencies)
+                if (parentDependency != null) {
+                    // 添加父POM到依赖列表（即使本地文件不存在）
+                    val parentKey = "${parentDependency.groupId}:${parentDependency.artifactId}:${parentDependency.version}"
+                    if (!analyzedParents.contains(parentKey)) {
+                        dependencies.add(parentDependency)
+                        analyzedParents.add(parentKey)
+                        logger.info("【父POM分析】添加父POM: ${parentDependency.getGAV()} (本地文件${if (parentDependency.localPath.isEmpty()) "不存在" else "存在"})")
+                    }
+                    
+                    // 如果本地文件存在，继续递归分析
+                    if (parentDependency.localPath.isNotEmpty()) {
+                        analyzeParentPomFromFile(parentDependency.localPath, dependencies, analyzedParents, pluginDependencies)
+                    } else {
+                        logger.info("【父POM分析】父POM ${parentDependency.getGAV()} 本地文件不存在，无法继续递归分析")
+                    }
                 } else {
-                    logger.info("【父POM分析】父POM ${parentDependency.getGAV()} 本地文件不存在，无法继续递归分析")
+                    logger.debug("【父POM分析】父POM包含未解析的属性占位符，跳过: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}")
                 }
             } else {
                 logger.debug("POM ${currentKey} 没有父POM，递归结束")
@@ -680,6 +692,12 @@ class MavenDependencyAnalyzer(private val project: Project) {
         bomDependencies.forEach { bom ->
             try {
                 val bomDependency = pomParser.bomToDependencyInfo(bom)
+                
+                if (bomDependency == null) {
+                    logger.debug("【BOM分析】BOM包含未解析的属性占位符，跳过: ${bom.groupId}:${bom.artifactId}:${bom.version}")
+                    return@forEach
+                }
+                
                 val bomKey = "${bomDependency.groupId}:${bomDependency.artifactId}:${bomDependency.version}"
                 
                 // 检查是否已经分析过（避免循环依赖）
@@ -704,16 +722,20 @@ class MavenDependencyAnalyzer(private val project: Project) {
                                 logger.info("【BOM分析】BOM ${bomDependency.getGAV()} 还有父POM: ${bomPomInfo.parent.groupId}:${bomPomInfo.parent.artifactId}:${bomPomInfo.parent.version}，开始递归分析")
                                 val bomParentDependency = pomParser.parentToDependencyInfo(bomPomInfo.parent)
                                 
-                                val bomParentKey = "${bomParentDependency.groupId}:${bomParentDependency.artifactId}:${bomParentDependency.version}"
-                                if (!analyzedParents.contains(bomParentKey)) {
-                                    dependencies.add(bomParentDependency)
-                                    analyzedParents.add(bomParentKey)
-                                    logger.info("【BOM分析】添加BOM的父POM: ${bomParentDependency.getGAV()} (本地文件${if (bomParentDependency.localPath.isEmpty()) "不存在" else "存在"})")
-                                }
-                                
-                                // 如果本地文件存在，继续递归分析
-                                if (bomParentDependency.localPath.isNotEmpty()) {
-                                    analyzeParentPomFromFile(bomParentDependency.localPath, dependencies, analyzedParents, pluginDependencies)
+                                if (bomParentDependency != null) {
+                                    val bomParentKey = "${bomParentDependency.groupId}:${bomParentDependency.artifactId}:${bomParentDependency.version}"
+                                    if (!analyzedParents.contains(bomParentKey)) {
+                                        dependencies.add(bomParentDependency)
+                                        analyzedParents.add(bomParentKey)
+                                        logger.info("【BOM分析】添加BOM的父POM: ${bomParentDependency.getGAV()} (本地文件${if (bomParentDependency.localPath.isEmpty()) "不存在" else "存在"})")
+                                    }
+                                    
+                                    // 如果本地文件存在，继续递归分析
+                                    if (bomParentDependency.localPath.isNotEmpty()) {
+                                        analyzeParentPomFromFile(bomParentDependency.localPath, dependencies, analyzedParents, pluginDependencies)
+                                    }
+                                } else {
+                                    logger.debug("【BOM分析】BOM的父POM包含未解析的属性占位符，跳过: ${bomPomInfo.parent.groupId}:${bomPomInfo.parent.artifactId}:${bomPomInfo.parent.version}")
                                 }
                             }
                             
@@ -778,6 +800,12 @@ class MavenDependencyAnalyzer(private val project: Project) {
         plugins.forEach { plugin ->
             try {
                 val pluginDependency = pomParser.pluginToDependencyInfo(plugin)
+                
+                if (pluginDependency == null) {
+                    logger.debug("【插件分析】插件包含未解析的属性占位符，跳过: ${plugin.groupId}:${plugin.artifactId}:${plugin.version}")
+                    return@forEach
+                }
+                
                 val pluginKey = "${pluginDependency.groupId}:${pluginDependency.artifactId}"
                 
                 // 检查是否已经存在同一插件

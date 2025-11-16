@@ -219,30 +219,38 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
                     // 递归上传父 POM 链
                     pomInfo.parent?.let { parent ->
                         val parentDependency = pomParser.parentToDependencyInfo(parent)
-                        if (parentDependency.localPath.isNotEmpty()) {
-                            logger.info("发现父 POM: ${parentDependency.getGAV()}，开始递归上传")
-                            val parentResult = uploadDependencyRecursive(parentDependency, progressIndicator, uploadedDependencies)
-                            if (!parentResult.success) {
-                                logger.warn("父 POM ${parentDependency.getGAV()} 上传失败: ${parentResult.message}")
-                                // 继续上传当前 POM，不因为父 POM 失败而中断
+                        if (parentDependency != null) {
+                            if (parentDependency.localPath.isNotEmpty()) {
+                                logger.info("发现父 POM: ${parentDependency.getGAV()}，开始递归上传")
+                                val parentResult = uploadDependencyRecursive(parentDependency, progressIndicator, uploadedDependencies)
+                                if (!parentResult.success) {
+                                    logger.warn("父 POM ${parentDependency.getGAV()} 上传失败: ${parentResult.message}")
+                                    // 继续上传当前 POM，不因为父 POM 失败而中断
+                                }
+                            } else {
+                                logger.warn("父 POM ${parentDependency.getGAV()} 本地文件不存在，无法上传")
                             }
                         } else {
-                            logger.warn("父 POM ${parentDependency.getGAV()} 本地文件不存在，无法上传")
+                            logger.debug("父 POM 包含未解析的属性占位符，跳过: ${parent.groupId}:${parent.artifactId}:${parent.version}")
                         }
                     }
                     
                     // 递归上传 BOM 依赖
                     pomInfo.bomDependencies.forEach { bom ->
                         val bomDependency = pomParser.bomToDependencyInfo(bom)
-                        if (bomDependency.localPath.isNotEmpty()) {
-                            logger.info("发现 BOM 依赖: ${bomDependency.getGAV()}，开始递归上传")
-                            val bomResult = uploadDependencyRecursive(bomDependency, progressIndicator, uploadedDependencies)
-                            if (!bomResult.success) {
-                                logger.warn("BOM ${bomDependency.getGAV()} 上传失败: ${bomResult.message}")
-                                // 继续上传当前 POM，不因为 BOM 失败而中断
+                        if (bomDependency != null) {
+                            if (bomDependency.localPath.isNotEmpty()) {
+                                logger.info("发现 BOM 依赖: ${bomDependency.getGAV()}，开始递归上传")
+                                val bomResult = uploadDependencyRecursive(bomDependency, progressIndicator, uploadedDependencies)
+                                if (!bomResult.success) {
+                                    logger.warn("BOM ${bomDependency.getGAV()} 上传失败: ${bomResult.message}")
+                                    // 继续上传当前 POM，不因为 BOM 失败而中断
+                                }
+                            } else {
+                                logger.warn("BOM ${bomDependency.getGAV()} 本地文件不存在，无法上传")
                             }
                         } else {
-                            logger.warn("BOM ${bomDependency.getGAV()} 本地文件不存在，无法上传")
+                            logger.debug("BOM 包含未解析的属性占位符，跳过: ${bom.groupId}:${bom.artifactId}:${bom.version}")
                         }
                     }
                 }
@@ -276,28 +284,36 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
                     // 递归上传父 POM 链
                     pomInfo.parent?.let { parent ->
                         val parentDependency = pomParser.parentToDependencyInfo(parent)
-                        if (parentDependency.localPath.isNotEmpty()) {
-                            logger.info("发现父 POM: ${parentDependency.getGAV()}，开始递归上传")
-                            val parentResult = uploadDependencyRecursive(parentDependency, progressIndicator, uploadedDependencies)
-                            if (!parentResult.success) {
-                                logger.warn("父 POM ${parentDependency.getGAV()} 上传失败: ${parentResult.message}")
+                        if (parentDependency != null) {
+                            if (parentDependency.localPath.isNotEmpty()) {
+                                logger.info("发现父 POM: ${parentDependency.getGAV()}，开始递归上传")
+                                val parentResult = uploadDependencyRecursive(parentDependency, progressIndicator, uploadedDependencies)
+                                if (!parentResult.success) {
+                                    logger.warn("父 POM ${parentDependency.getGAV()} 上传失败: ${parentResult.message}")
+                                }
+                            } else {
+                                logger.warn("父 POM ${parentDependency.getGAV()} 本地文件不存在，无法上传")
                             }
                         } else {
-                            logger.warn("父 POM ${parentDependency.getGAV()} 本地文件不存在，无法上传")
+                            logger.debug("父 POM 包含未解析的属性占位符，跳过: ${parent.groupId}:${parent.artifactId}:${parent.version}")
                         }
                     }
                     
                     // 递归上传 BOM 依赖
                     pomInfo.bomDependencies.forEach { bom ->
                         val bomDependency = pomParser.bomToDependencyInfo(bom)
-                        if (bomDependency.localPath.isNotEmpty()) {
-                            logger.info("发现 BOM 依赖: ${bomDependency.getGAV()}，开始递归上传")
-                            val bomResult = uploadDependencyRecursive(bomDependency, progressIndicator, uploadedDependencies)
-                            if (!bomResult.success) {
-                                logger.warn("BOM ${bomDependency.getGAV()} 上传失败: ${bomResult.message}")
+                        if (bomDependency != null) {
+                            if (bomDependency.localPath.isNotEmpty()) {
+                                logger.info("发现 BOM 依赖: ${bomDependency.getGAV()}，开始递归上传")
+                                val bomResult = uploadDependencyRecursive(bomDependency, progressIndicator, uploadedDependencies)
+                                if (!bomResult.success) {
+                                    logger.warn("BOM ${bomDependency.getGAV()} 上传失败: ${bomResult.message}")
+                                }
+                            } else {
+                                logger.warn("BOM ${bomDependency.getGAV()} 本地文件不存在，无法上传")
                             }
                         } else {
-                            logger.warn("BOM ${bomDependency.getGAV()} 本地文件不存在，无法上传")
+                            logger.debug("BOM 包含未解析的属性占位符，跳过: ${bom.groupId}:${bom.artifactId}:${bom.version}")
                         }
                     }
                 }
