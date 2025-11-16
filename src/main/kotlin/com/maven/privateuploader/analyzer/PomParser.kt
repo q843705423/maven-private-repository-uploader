@@ -30,6 +30,7 @@ class PomParser {
         val version: String?,
         val parent: ParentInfo?,
         val bomDependencies: List<BomDependency>,
+        val dependencies: List<TransitiveDependency>,
         val plugins: List<PluginDependency>,
         val properties: Map<String, String>
     )
@@ -51,6 +52,17 @@ class PomParser {
         val groupId: String,
         val artifactId: String,
         val version: String
+    )
+    
+    /**
+     * 传递依赖信息（dependencies 中的普通依赖）
+     */
+    data class TransitiveDependency(
+        val groupId: String,
+        val artifactId: String,
+        val version: String?,
+        val scope: String?,
+        val type: String?
     )
     
     /**
@@ -135,6 +147,9 @@ class PomParser {
             // 解析 BOM 依赖（需要应用属性解析）
             val bomDependencies = parseBomDependencies(document, namespaceURI, allProperties)
             
+            // 解析普通依赖（dependencies 中的依赖，用于递归分析传递依赖）
+            val dependencies = parseDependencies(document, namespaceURI, allProperties)
+            
             // 解析 Maven 插件（需要应用属性解析，并继承父 POM 的插件）
             val plugins = if (parsePlugins) {
                 // 解析父 POM 的原始插件声明（只读取 groupId/artifactId/rawVersionExpr，不解析版本）
@@ -173,6 +188,7 @@ class PomParser {
                 version = version,
                 parent = resolvedParent,
                 bomDependencies = bomDependencies,
+                dependencies = dependencies,
                 plugins = plugins,
                 properties = allProperties
             )
@@ -377,6 +393,61 @@ class PomParser {
         }
         
         return bomDependencies
+    }
+    
+    /**
+     * 解析普通依赖（dependencies 中的依赖）
+     * 用于递归分析传递依赖的 parent 和 dependencies
+     */
+    private fun parseDependencies(document: Document, namespaceURI: String?, properties: Map<String, String>): List<TransitiveDependency> {
+        val dependencies = mutableListOf<TransitiveDependency>()
+        
+        try {
+            // 查找 dependencies 节点（不是 dependencyManagement）
+            val dependenciesNode = getElementByTagName(document, "dependencies", namespaceURI) as? Element
+                ?: return emptyList()
+            
+            // 查找所有 dependency
+            val dependencyNodeList = getElementsByTagName(dependenciesNode, "dependency", namespaceURI)
+            
+            for (i in 0 until dependencyNodeList.length) {
+                val dependencyNode = dependencyNodeList.item(i) as? Element
+                    ?: continue
+                
+                val rawGroupId = getElementText(dependencyNode, "groupId", namespaceURI)
+                val rawArtifactId = getElementText(dependencyNode, "artifactId", namespaceURI)
+                val rawVersion = getElementText(dependencyNode, "version", namespaceURI)
+                val scope = getElementText(dependencyNode, "scope", namespaceURI)
+                val type = getElementText(dependencyNode, "type", namespaceURI)
+                
+                // 应用属性解析
+                val groupId = resolveProperties(rawGroupId, properties)
+                val artifactId = resolveProperties(rawArtifactId, properties)
+                val version = resolveProperties(rawVersion, properties)
+                
+                if (groupId.isNullOrBlank() || artifactId.isNullOrBlank()) {
+                    logger.debug("依赖信息不完整，跳过: groupId=$groupId, artifactId=$artifactId")
+                    continue
+                }
+                
+                // 注意：version 可能为空（可能从 parent 或 BOM 继承），但我们也需要记录这个依赖
+                dependencies.add(
+                    TransitiveDependency(
+                        groupId = groupId,
+                        artifactId = artifactId,
+                        version = version,
+                        scope = scope,
+                        type = type
+                    )
+                )
+                
+                logger.debug("发现传递依赖: $groupId:$artifactId:${version ?: "未指定版本"} (scope=${scope ?: "compile"}, type=${type ?: "jar"})")
+            }
+        } catch (e: Exception) {
+            logger.warn("解析普通依赖时发生错误", e)
+        }
+        
+        return dependencies
     }
     
     /**
@@ -829,6 +900,57 @@ class PomParser {
             artifactId = bom.artifactId,
             version = bom.version,
             packaging = "pom",
+            localPath = localPath,
+            checkStatus = com.maven.privateuploader.model.CheckStatus.UNKNOWN,
+            selected = false,
+            errorMessage = if (localPath.isEmpty()) "本地文件不存在" else ""
+        )
+    }
+    
+    /**
+     * 将 TransitiveDependency 转换为 DependencyInfo
+     * 即使本地文件不存在，也会创建 DependencyInfo 对象，以便在列表中显示该依赖
+     */
+    fun transitiveToDependencyInfo(transitive: TransitiveDependency): DependencyInfo? {
+        // 如果 version 为空，无法构建路径，返回 null
+        if (transitive.version.isNullOrBlank()) {
+            logger.debug("传递依赖 ${transitive.groupId}:${transitive.artifactId} 没有版本信息，跳过")
+            return null
+        }
+        
+        val packaging = transitive.type ?: "jar"
+        val localRepoPath = getLocalMavenRepositoryPath()
+        
+        // 根据 packaging 类型构建文件路径
+        val localPath = when (packaging) {
+            "pom" -> {
+                val pomFile = File(localRepoPath,
+                    "${transitive.groupId.replace('.', '/')}/${transitive.artifactId}/${transitive.version}/${transitive.artifactId}-${transitive.version}.pom")
+                if (pomFile.exists()) pomFile.absolutePath else ""
+            }
+            else -> {
+                // jar 或其他类型
+                val jarFile = File(localRepoPath,
+                    "${transitive.groupId.replace('.', '/')}/${transitive.artifactId}/${transitive.version}/${transitive.artifactId}-${transitive.version}.jar")
+                val pomFile = File(localRepoPath,
+                    "${transitive.groupId.replace('.', '/')}/${transitive.artifactId}/${transitive.version}/${transitive.artifactId}-${transitive.version}.pom")
+                when {
+                    jarFile.exists() -> jarFile.absolutePath
+                    pomFile.exists() -> pomFile.absolutePath
+                    else -> ""
+                }
+            }
+        }
+        
+        if (localPath.isEmpty()) {
+            logger.debug("传递依赖文件不存在: ${transitive.groupId}:${transitive.artifactId}:${transitive.version}")
+        }
+        
+        return DependencyInfo(
+            groupId = transitive.groupId,
+            artifactId = transitive.artifactId,
+            version = transitive.version,
+            packaging = packaging,
             localPath = localPath,
             checkStatus = com.maven.privateuploader.model.CheckStatus.UNKNOWN,
             selected = false,

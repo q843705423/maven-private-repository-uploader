@@ -148,7 +148,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
             // 分析传递依赖树 - 这是关键！
             logger.info("【传递依赖分析】开始分析传递依赖树，当前依赖数: ${dependencies.size}")
             val dependencyCountBeforeTree = dependencies.size
-            analyzeDependencyTree(mavenProject, dependencies)
+            analyzeDependencyTree(mavenProject, dependencies, pluginDependencies)
             val dependencyCountAfterTree = dependencies.size
             logger.info("【传递依赖分析】传递依赖树分析完成，新增 ${dependencyCountAfterTree - dependencyCountBeforeTree} 个依赖，当前总依赖数: ${dependencies.size}")
 
@@ -190,7 +190,11 @@ class MavenDependencyAnalyzer(private val project: Project) {
     /**
      * 分析完整的依赖树（包括传递依赖）
      */
-    private fun analyzeDependencyTree(mavenProject: MavenProject, dependencies: MutableSet<DependencyInfo>) {
+    private fun analyzeDependencyTree(
+        mavenProject: MavenProject,
+        dependencies: MutableSet<DependencyInfo>,
+        pluginDependencies: MutableMap<String, Pair<DependencyInfo, PluginOrigin>>
+    ) {
         try {
             // 获取所有已解析的依赖（包括传递依赖）
             // 使用 getDeclaredDependencies 和 plugins 来获取依赖
@@ -201,6 +205,9 @@ class MavenDependencyAnalyzer(private val project: Project) {
 
             logger.info("依赖树包含 ${allDependencies.size} 个节点")
 
+            // 用于跟踪已分析的依赖 POM，避免重复分析和循环依赖
+            val analyzedDependencyPoms = mutableSetOf<String>()
+            
             allDependencies.forEachIndexed { index, dependency ->
                 try {
                     logger.debug("依赖树节点 $index: ${dependency.groupId}:${dependency.artifactId}:${dependency.version}, 文件: ${dependency.file}, 范围: ${dependency.scope}")
@@ -210,6 +217,9 @@ class MavenDependencyAnalyzer(private val project: Project) {
                         val dependencyInfo = createDependencyInfo(dependency)
                         dependencies.add(dependencyInfo)
                         logger.debug("添加依赖树依赖: ${dependencyInfo.getGAV()}")
+                        
+                        // 递归解析依赖的 POM，提取 parent 和 dependencies
+                        analyzeDependencyPomRecursive(dependencyInfo, dependencies, analyzedDependencyPoms, pluginDependencies)
                     }
                 } catch (e: Exception) {
                     logger.warn("处理依赖树节点时出错: ${e.message}")
@@ -235,6 +245,134 @@ class MavenDependencyAnalyzer(private val project: Project) {
 
         } catch (e: Exception) {
             logger.error("分析依赖树时发生错误", e)
+        }
+    }
+    
+    /**
+     * 递归分析依赖的 POM 文件，提取 parent 和 dependencies
+     * 这是解决 "Failed to read artifact descriptor" 错误的关键方法
+     * 
+     * @param dependencyInfo 要分析的依赖
+     * @param dependencies 依赖集合
+     * @param analyzedDependencyPoms 已分析的依赖 POM 集合（用于避免循环依赖）
+     * @param pluginDependencies 插件依赖集合（用于版本替换）
+     */
+    private fun analyzeDependencyPomRecursive(
+        dependencyInfo: DependencyInfo,
+        dependencies: MutableSet<DependencyInfo>,
+        analyzedDependencyPoms: MutableSet<String>,
+        pluginDependencies: MutableMap<String, Pair<DependencyInfo, PluginOrigin>>
+    ) {
+        try {
+            // 构建依赖的 POM 文件路径
+            val pomPath = if (dependencyInfo.localPath.isNotEmpty() && dependencyInfo.localPath.endsWith(".pom")) {
+                dependencyInfo.localPath
+            } else {
+                // 如果是 jar 文件，尝试找到对应的 pom 文件
+                val pomFile = File(dependencyInfo.localPath.replace(".jar", ".pom"))
+                if (pomFile.exists()) {
+                    pomFile.absolutePath
+                } else {
+                    // 如果本地路径不存在，尝试构建路径
+                    val pomParser = PomParser()
+                    pomParser.buildLocalPomPath(dependencyInfo.groupId, dependencyInfo.artifactId, dependencyInfo.version).absolutePath
+                }
+            }
+            
+            val pomFile = File(pomPath)
+            if (!pomFile.exists() || !pomFile.isFile) {
+                logger.debug("【依赖POM分析】依赖 ${dependencyInfo.getGAV()} 的 POM 文件不存在: ${pomFile.absolutePath}")
+                return
+            }
+            
+            val dependencyKey = "${dependencyInfo.groupId}:${dependencyInfo.artifactId}:${dependencyInfo.version}"
+            
+            // 检查是否已经分析过（避免循环依赖）
+            if (analyzedDependencyPoms.contains(dependencyKey)) {
+                logger.debug("【依赖POM分析】依赖 $dependencyKey 的 POM 已分析过，跳过（避免循环依赖）")
+                return
+            }
+            
+            analyzedDependencyPoms.add(dependencyKey)
+            logger.info("【依赖POM分析】开始分析依赖 $dependencyKey 的 POM: ${pomFile.absolutePath}")
+            
+            val pomParser = PomParser()
+            val pomInfo = pomParser.parsePom(pomFile, parsePlugins = false)  // 不解析插件，只解析 parent 和 dependencies
+            
+            if (pomInfo == null) {
+                logger.warn("【依赖POM分析】无法解析依赖 $dependencyKey 的 POM 文件: ${pomFile.absolutePath}")
+                return
+            }
+            
+            // 处理依赖的 parent POM
+            if (pomInfo.parent != null) {
+                logger.info("【依赖POM分析】依赖 $dependencyKey 有父 POM: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}，开始递归分析")
+                val parentDependency = pomParser.parentToDependencyInfo(pomInfo.parent)
+                
+                val parentKey = "${parentDependency.groupId}:${parentDependency.artifactId}:${parentDependency.version}"
+                if (!analyzedDependencyPoms.contains(parentKey)) {
+                    dependencies.add(parentDependency)
+                    analyzedDependencyPoms.add(parentKey)
+                    logger.info("【依赖POM分析】添加依赖的父 POM: ${parentDependency.getGAV()} (本地文件${if (parentDependency.localPath.isEmpty()) "不存在" else "存在"})")
+                    
+                    // 如果本地文件存在，继续递归分析父 POM
+                    if (parentDependency.localPath.isNotEmpty()) {
+                        analyzeParentPomFromFile(parentDependency.localPath, dependencies, analyzedDependencyPoms, pluginDependencies)
+                    }
+                }
+            }
+            
+            // 处理依赖的传递依赖（dependencies）
+            if (pomInfo.dependencies.isNotEmpty()) {
+                logger.info("【依赖POM分析】依赖 $dependencyKey 包含 ${pomInfo.dependencies.size} 个传递依赖，开始分析")
+                pomInfo.dependencies.forEach { transitive ->
+                    try {
+                        // 只处理有版本信息的依赖
+                        if (transitive.version.isNullOrBlank()) {
+                            logger.debug("【依赖POM分析】传递依赖 ${transitive.groupId}:${transitive.artifactId} 没有版本信息，跳过")
+                            return@forEach
+                        }
+                        
+                        // 跳过 test 和 provided scope 的依赖
+                        if (transitive.scope == "test" || transitive.scope == "provided") {
+                            logger.debug("【依赖POM分析】跳过 test/provided scope 的传递依赖: ${transitive.groupId}:${transitive.artifactId}:${transitive.version}")
+                            return@forEach
+                        }
+                        
+                        val transitiveDependency = pomParser.transitiveToDependencyInfo(transitive)
+                        if (transitiveDependency != null) {
+                            val transitiveKey = "${transitiveDependency.groupId}:${transitiveDependency.artifactId}:${transitiveDependency.version}"
+                            
+                            // 检查是否已经添加过
+                            if (!dependencies.any { it.groupId == transitiveDependency.groupId && 
+                                it.artifactId == transitiveDependency.artifactId && 
+                                it.version == transitiveDependency.version }) {
+                                dependencies.add(transitiveDependency)
+                                logger.info("【依赖POM分析】添加传递依赖: ${transitiveDependency.getGAV()} (本地文件${if (transitiveDependency.localPath.isEmpty()) "不存在" else "存在"})")
+                                
+                                // 递归分析传递依赖的 POM（如果本地文件存在）
+                                if (transitiveDependency.localPath.isNotEmpty()) {
+                                    analyzeDependencyPomRecursive(transitiveDependency, dependencies, analyzedDependencyPoms, pluginDependencies)
+                                }
+                            } else {
+                                logger.debug("【依赖POM分析】传递依赖 $transitiveKey 已存在，跳过")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        logger.warn("【依赖POM分析】处理传递依赖 ${transitive.groupId}:${transitive.artifactId}:${transitive.version} 时发生错误", e)
+                    }
+                }
+            }
+            
+            // 处理依赖的 BOM 依赖
+            if (pomInfo.bomDependencies.isNotEmpty()) {
+                logger.info("【依赖POM分析】依赖 $dependencyKey 包含 ${pomInfo.bomDependencies.size} 个 BOM 依赖，开始分析")
+                analyzeBomDependencies(pomInfo.bomDependencies, dependencies, analyzedDependencyPoms, pomParser, pluginDependencies, bomDepth = 1)
+            }
+            
+            logger.info("【依赖POM分析】依赖 $dependencyKey 的 POM 分析完成")
+        } catch (e: Exception) {
+            logger.error("【依赖POM分析】分析依赖 ${dependencyInfo.getGAV()} 的 POM 时发生错误", e)
         }
     }
 
