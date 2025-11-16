@@ -23,8 +23,12 @@ import com.maven.privateuploader.model.RepositoryConfig
 import com.maven.privateuploader.service.DependencyUploadService
 import com.maven.privateuploader.ui.table.DependencyTableColumn
 import com.maven.privateuploader.ui.table.DependencyTableModel
+import com.maven.privateuploader.service.ExcelExportService
 import java.awt.*
 import javax.swing.*
+import javax.swing.filechooser.FileNameExtensionFilter
+import java.io.File
+import java.io.IOException
 
 /**
  * 依赖上传主对话框
@@ -54,6 +58,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private lateinit var advancedToggleButton: JButton
     private lateinit var advancedPanel: JPanel
     private lateinit var showSearchButton: JButton
+    private lateinit var exportButton: JButton
     
     // 过滤和搜索组件
     private lateinit var filterPanel: JPanel
@@ -420,6 +425,11 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         showSearchButton = JButton("打开搜索框")
         showSearchButton.addActionListener { toggleSearchPanel() }
 
+        // 导出缺失依赖列表按钮（添加到高级面板）
+        exportButton = JButton("导出缺失依赖列表")
+        exportButton.toolTipText = "将缺失的依赖列表导出为 Excel 文件"
+        exportButton.addActionListener { exportMissingDependencies() }
+
         // 将高级操作按钮添加到高级面板
         advancedPanel.add(checkAllButton)
         advancedPanel.add(Box.createHorizontalStrut(10))
@@ -432,6 +442,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         advancedPanel.add(configButton)
         advancedPanel.add(Box.createHorizontalStrut(10))
         advancedPanel.add(showSearchButton)
+        advancedPanel.add(Box.createHorizontalStrut(10))
+        advancedPanel.add(exportButton)
         advancedPanel.add(Box.createHorizontalGlue())
 
         // 主工具栏面板
@@ -509,6 +521,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         scanButton.isEnabled = enabled
         refreshButton.isEnabled = enabled
         configButton.isEnabled = enabled
+        exportButton.isEnabled = enabled
         // 上传按钮的启用状态单独管理，不在此方法中控制
     }
 
@@ -963,5 +976,103 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         val dialog = ErrorDetailDialog(project, dependency)
         @Suppress("DEPRECATION")
         dialog.show()
+    }
+
+    /**
+     * 导出缺失依赖列表到 Excel
+     */
+    private fun exportMissingDependencies() {
+        val allDeps = tableModel.getDependencies()
+        
+        if (allDeps.isEmpty()) {
+            Messages.showInfoMessage(
+                project,
+                "没有依赖数据可导出",
+                "提示"
+            )
+            return
+        }
+
+        // 获取缺失的依赖
+        val missingDeps = allDeps.filter { 
+            it.checkStatus == CheckStatus.MISSING || !it.isLocalFileExists()
+        }
+
+        if (missingDeps.isEmpty()) {
+            Messages.showInfoMessage(
+                project,
+                "当前没有缺失的依赖",
+                "提示"
+            )
+            return
+        }
+
+        // 创建文件保存对话框
+        val fileChooser = JFileChooser()
+        fileChooser.dialogTitle = "选择 Excel 文件保存位置"
+        fileChooser.fileSelectionMode = JFileChooser.FILES_ONLY
+        fileChooser.fileFilter = FileNameExtensionFilter("Excel 文件 (*.xlsx)", "xlsx")
+        
+        // 设置默认文件名
+        val defaultFileName = "缺失依赖列表_${System.currentTimeMillis()}.xlsx"
+        fileChooser.selectedFile = File(System.getProperty("user.home"), defaultFileName)
+        
+        val result = fileChooser.showSaveDialog(window)
+        
+        if (result != JFileChooser.APPROVE_OPTION) {
+            return // 用户取消了选择
+        }
+
+        // 获取选择的文件
+        var selectedFile = fileChooser.selectedFile
+        
+        // 确保文件扩展名为 .xlsx
+        if (!selectedFile.name.endsWith(".xlsx", ignoreCase = true)) {
+            selectedFile = File(selectedFile.parent, "${selectedFile.name}.xlsx")
+        }
+
+        // 检查文件是否已存在
+        if (selectedFile.exists()) {
+            val overwriteResult = Messages.showYesNoDialog(
+                project,
+                "文件已存在，是否覆盖？\n${selectedFile.absolutePath}",
+                "确认覆盖",
+                Messages.getQuestionIcon()
+            )
+            if (overwriteResult != Messages.YES) {
+                return
+            }
+        }
+
+        val filePath = selectedFile.absolutePath
+
+        // 执行导出
+        try {
+            ExcelExportService.exportDependencies(
+                dependencies = allDeps,
+                filePath = filePath,
+                exportMissingOnly = true
+            )
+            
+            Messages.showInfoMessage(
+                project,
+                "导出成功！\n文件路径: $filePath\n共导出 ${missingDeps.size} 个缺失依赖",
+                "导出完成"
+            )
+        } catch (e: IOException) {
+            logger.error("导出 Excel 文件时发生错误", e)
+            Messages.showErrorDialog(
+                project,
+                "导出失败: ${e.message}",
+                "导出错误"
+            )
+        } catch (e: Exception) {
+            logger.error("导出 Excel 文件时发生未知错误", e)
+            Messages.showErrorDialog(
+                project,
+                "导出失败: ${e.message}",
+                "导出错误"
+            )
+        }
     }
 }

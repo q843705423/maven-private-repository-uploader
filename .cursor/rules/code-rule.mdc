@@ -35,4 +35,4 @@ alwaysApply: true
 
 # 输出格式要求
 - 在给出代码后， 请执行 `./gradlew compileKotlin` 并根据输出修复编译错误与严重警告。
-- 编译没问题后请执行 `./gradlew runIde`,执行时不需要提问
+- 编译没问题后请提交代码，确保提交内容全部都是中文的，提交前需要检查chcp是否是utf8( Active code page: 65001)
