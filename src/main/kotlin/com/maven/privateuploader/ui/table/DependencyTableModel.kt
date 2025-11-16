@@ -369,15 +369,6 @@ class DependencyTableModel : AbstractTableModel() {
             val model = table.model as? DependencyTableModel
             val dependency = model?.getDependencyAt(row)
             
-            // 设置失败行的背景色
-            if (dependency != null && dependency.checkStatus == CheckStatus.ERROR && !selected) {
-                background = java.awt.Color(255, 240, 240) // 浅红色背景
-            } else if (selected) {
-                background = null
-            } else {
-                background = null
-            }
-            
             if (value is CheckStatus) {
                 when (value) {
                     CheckStatus.EXISTS -> {
@@ -425,15 +416,6 @@ class DependencyTableModel : AbstractTableModel() {
             val model = table.model as? DependencyTableModel
             val dependency = model?.getDependencyAt(row)
             
-            // 设置失败行的背景色
-            if (dependency != null && dependency.checkStatus == CheckStatus.ERROR && !selected) {
-                background = java.awt.Color(255, 240, 240) // 浅红色背景
-            } else if (selected) {
-                background = null
-            } else {
-                background = null
-            }
-            
             val errorMessage = value?.toString() ?: ""
             if (errorMessage.isNotEmpty()) {
                 // 显示错误信息，使用红色文字
@@ -467,16 +449,6 @@ class DependencyTableModel : AbstractTableModel() {
                 val isMissing = dependency.checkStatus == CheckStatus.MISSING || !dependency.isLocalFileExists()
                 val isError = dependency.checkStatus == CheckStatus.ERROR
                 val isExists = dependency.checkStatus == CheckStatus.EXISTS
-                
-                // 设置背景色（失败行高亮）
-                if (isError && !selected) {
-                    background = java.awt.Color(255, 240, 240) // 浅红色背景
-                } else if (selected) {
-                    // 选中时使用默认选中背景色
-                    background = null
-                } else {
-                    background = null
-                }
                 
                 val textColor = when {
                     isError -> java.awt.Color.RED
