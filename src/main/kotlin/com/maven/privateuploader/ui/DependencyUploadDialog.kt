@@ -50,6 +50,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
     private lateinit var oneClickButton: JButton
     private lateinit var advancedToggleButton: JButton
     private lateinit var advancedPanel: JPanel
+    private lateinit var showSearchButton: JButton
     
     // 过滤和搜索组件
     private lateinit var filterPanel: JPanel
@@ -150,6 +151,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         filterPanel = JPanel()
         filterPanel.layout = BoxLayout(filterPanel, BoxLayout.X_AXIS)
         filterPanel.border = javax.swing.BorderFactory.createEmptyBorder(5, 0, 5, 0)
+        // 默认隐藏搜索和过滤面板
+        filterPanel.isVisible = false
 
         // 搜索框
         val searchLabel = JBLabel("搜索:")
@@ -283,6 +286,12 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         // 设置主按钮样式，使其更突出
         oneClickButton.font = oneClickButton.font.deriveFont(java.awt.Font.BOLD, oneClickButton.font.size + 1f)
 
+        // 上传按钮（核心功能，从高级面板移出）
+        uploadButton = JButton("上传到私仓")
+        uploadButton.addActionListener { uploadSelectedDependencies() }
+        // 初始状态禁用上传按钮
+        uploadButton.isEnabled = false
+
         // 高级操作按钮（切换显示/隐藏）
         advancedToggleButton = JButton("高级操作 ▼")
         advancedToggleButton.addActionListener { toggleAdvancedOptions() }
@@ -307,8 +316,9 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         configButton = JButton("私仓设置")
         configButton.addActionListener { openSettings() }
 
-        uploadButton = JButton("上传到私仓")
-        uploadButton.addActionListener { uploadSelectedDependencies() }
+        // 打开搜索框按钮（添加到高级面板）
+        showSearchButton = JButton("打开搜索框")
+        showSearchButton.addActionListener { toggleSearchPanel() }
 
         // 将高级操作按钮添加到高级面板
         advancedPanel.add(checkAllButton)
@@ -320,18 +330,21 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         advancedPanel.add(refreshButton)
         advancedPanel.add(Box.createHorizontalStrut(10))
         advancedPanel.add(configButton)
+        advancedPanel.add(Box.createHorizontalStrut(10))
+        advancedPanel.add(showSearchButton)
         advancedPanel.add(Box.createHorizontalGlue())
-        advancedPanel.add(uploadButton)
 
         // 主工具栏面板
         val toolbarPanel = JPanel()
         toolbarPanel.layout = BoxLayout(toolbarPanel, BoxLayout.Y_AXIS)
         toolbarPanel.border = javax.swing.BorderFactory.createEmptyBorder(5, 0, 5, 0)
 
-        // 第一行：主按钮和高级操作切换按钮
+        // 第一行：主按钮、上传按钮和高级操作切换按钮
         val mainButtonPanel = JPanel()
         mainButtonPanel.layout = BoxLayout(mainButtonPanel, BoxLayout.X_AXIS)
         mainButtonPanel.add(oneClickButton)
+        mainButtonPanel.add(Box.createHorizontalStrut(10))
+        mainButtonPanel.add(uploadButton)
         mainButtonPanel.add(Box.createHorizontalStrut(10))
         mainButtonPanel.add(advancedToggleButton)
         mainButtonPanel.add(Box.createHorizontalGlue())
@@ -368,6 +381,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
     /**
      * 统一管理按钮启用/禁用状态
+     * 注意：上传按钮的启用状态单独管理，不在此方法中控制
      */
     private fun setButtonsEnabled(enabled: Boolean) {
         oneClickButton.isEnabled = enabled
@@ -377,7 +391,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         scanButton.isEnabled = enabled
         refreshButton.isEnabled = enabled
         configButton.isEnabled = enabled
-        uploadButton.isEnabled = enabled
+        // 上传按钮的启用状态单独管理，不在此方法中控制
     }
 
     override fun getPreferredFocusedComponent(): JComponent {
@@ -489,6 +503,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                         // 检查完成后，自动将缺失的记录排到前面
                         updateTableData(dependencies, "私仓检查完成：缺失 $missingCount 个，已存在 $existsCount 个", sortMissingFirst = true)
                         setButtonsEnabled(true)
+                        // 检查完成后启用上传按钮
+                        uploadButton.isEnabled = true
                     }
                 } catch (e: Exception) {
                     logger.error("检查私仓依赖状态时发生错误", e)
@@ -612,6 +628,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                         // 检查完成后，自动将缺失的记录排到前面
                         updateTableData(deps, "检查完成：缺失 $missingCount 个（已自动勾选 $selectedCount 个），已存在 $existsCount 个", sortMissingFirst = true)
                         setButtonsEnabled(true)
+                        // 检查完成后启用上传按钮
+                        uploadButton.isEnabled = true
                     }
                 } catch (e: Exception) {
                     logger.error("一键扫描并检查时发生错误", e)
@@ -633,6 +651,17 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         // 重新布局
         advancedPanel.parent?.revalidate()
         advancedPanel.parent?.repaint()
+    }
+
+    /**
+     * 切换搜索面板的显示/隐藏
+     */
+    private fun toggleSearchPanel() {
+        filterPanel.isVisible = !filterPanel.isVisible
+        showSearchButton.text = if (filterPanel.isVisible) "关闭搜索框" else "打开搜索框"
+        // 重新布局
+        filterPanel.parent?.revalidate()
+        filterPanel.parent?.repaint()
     }
 
     /**
