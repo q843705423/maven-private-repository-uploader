@@ -18,6 +18,7 @@ import com.maven.privateuploader.model.CheckStatus
 import com.maven.privateuploader.model.DependencyInfo
 import com.maven.privateuploader.model.RepositoryConfig
 import com.maven.privateuploader.service.DependencyUploadService
+import com.maven.privateuploader.ui.table.DependencyTableColumn
 import com.maven.privateuploader.ui.table.DependencyTableModel
 import java.awt.*
 import javax.swing.*
@@ -162,15 +163,11 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
         dependencyTable.rowHeight = 24
         dependencyTable.fillsViewportHeight = true  // 确保表格填充视口
 
-        // 设置列宽
+        // 根据列配置设置列宽
         val columnModel = dependencyTable.columnModel
-        columnModel.getColumn(0).preferredWidth = 50  // 选择
-        columnModel.getColumn(1).preferredWidth = 200 // GroupId
-        columnModel.getColumn(2).preferredWidth = 150 // ArtifactId
-        columnModel.getColumn(3).preferredWidth = 100 // Version
-        columnModel.getColumn(4).preferredWidth = 80  // Packaging
-        columnModel.getColumn(5).preferredWidth = 120 // 状态
-        columnModel.getColumn(6).preferredWidth = 300 // 路径
+        DependencyTableColumn.allColumns.forEachIndexed { index, column ->
+            columnModel.getColumn(index).preferredWidth = column.preferredWidth
+        }
     }
 
     private fun createStatusBar() {

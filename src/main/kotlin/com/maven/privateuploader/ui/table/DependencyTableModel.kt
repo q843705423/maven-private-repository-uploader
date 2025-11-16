@@ -18,13 +18,12 @@ import javax.swing.table.DefaultTableCellRenderer
 class DependencyTableModel : AbstractTableModel() {
 
     private var dependencies: List<DependencyInfo> = mutableListOf()
-    private val columnNames = arrayOf("选择", "GroupId", "ArtifactId", "Version", "Packaging", "状态", "本地路径")
 
     /**
      * 列名
      */
     override fun getColumnName(column: Int): String {
-        return columnNames[column]
+        return DependencyTableColumn.getByIndex(column)?.displayName ?: ""
     }
 
     /**
@@ -38,58 +37,43 @@ class DependencyTableModel : AbstractTableModel() {
      * 列数
      */
     override fun getColumnCount(): Int {
-        return columnNames.size
+        return DependencyTableColumn.allColumns.size
     }
 
     /**
      * 单元格值
      */
     override fun getValueAt(rowIndex: Int, columnIndex: Int): Any {
+        val column = DependencyTableColumn.getByIndex(columnIndex) ?: return ""
+        
         if (rowIndex < 0 || rowIndex >= dependencies.size) {
-            return when (columnIndex) {
-                0 -> false  // 选择列
-                else -> ""
-            }
+            return column.defaultValue
         }
         
         val dependency = dependencies[rowIndex]
-
-        return when (columnIndex) {
-            0 -> dependency.selected  // 选择列
-            1 -> dependency.groupId
-            2 -> dependency.artifactId
-            3 -> dependency.version
-            4 -> dependency.packaging
-            5 -> dependency.checkStatus
-            6 -> dependency.localPath
-            else -> ""
-        }
+        return column.valueExtractor(dependency)
     }
 
     /**
      * 获取单元格类型
      */
     override fun getColumnClass(columnIndex: Int): Class<*> {
-        return when (columnIndex) {
-            0 -> java.lang.Boolean::class.java  // 选择列
-            5 -> CheckStatus::class.java       // 状态列
-            else -> String::class.java
-        }
+        return DependencyTableColumn.getByIndex(columnIndex)?.columnClass ?: String::class.java
     }
 
     /**
      * 单元格是否可编辑
      */
     override fun isCellEditable(rowIndex: Int, columnIndex: Int): Boolean {
-        // 只有选择列可编辑
-        return columnIndex == 0
+        return DependencyTableColumn.getByIndex(columnIndex)?.editable ?: false
     }
 
     /**
      * 设置单元格值（仅支持选择状态）
      */
     override fun setValueAt(value: Any?, rowIndex: Int, columnIndex: Int) {
-        if (columnIndex == 0 && rowIndex >= 0 && rowIndex < dependencies.size) {
+        val column = DependencyTableColumn.getByIndex(columnIndex)
+        if (column == DependencyTableColumn.SELECTED && rowIndex >= 0 && rowIndex < dependencies.size) {
             // 更新选择状态
             dependencies[rowIndex].selected = value as? Boolean ?: false
             fireTableCellUpdated(rowIndex, columnIndex)
@@ -162,14 +146,23 @@ class DependencyTableModel : AbstractTableModel() {
         fun createTable(): JTable {
             val table = JTable(DependencyTableModel())
 
-            // 设置选择列的渲染器和编辑器（使用JTable默认的布尔渲染器）
-            // JTable会自动为Boolean类型使用复选框渲染器
-            table.columnModel.getColumn(0).cellEditor = javax.swing.DefaultCellEditor(javax.swing.JCheckBox())
+            // 根据列配置设置渲染器和编辑器
+            DependencyTableColumn.allColumns.forEachIndexed { index, column ->
+                val tableColumn = table.columnModel.getColumn(index)
+                
+                // 设置选择列的编辑器
+                if (column == DependencyTableColumn.SELECTED) {
+                    // JTable会自动为Boolean类型使用复选框渲染器
+                    tableColumn.cellEditor = javax.swing.DefaultCellEditor(javax.swing.JCheckBox())
+                }
+                
+                // 设置状态列的渲染器
+                if (column == DependencyTableColumn.STATUS) {
+                    tableColumn.cellRenderer = StatusCellRenderer()
+                }
+            }
 
-            // 设置状态列的渲染器
-            table.columnModel.getColumn(5).cellRenderer = StatusCellRenderer()
-
-            // 设置其他列的渲染器
+            // 设置其他列的默认渲染器
             val defaultRenderer = DefaultTableCellRenderer()
             table.setDefaultRenderer(String::class.java, defaultRenderer)
 
