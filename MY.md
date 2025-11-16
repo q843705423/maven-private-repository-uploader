@@ -14,3 +14,10 @@
 4. UI测试
 
 ./gradlew runIdeForUiTests
+
+5. 构建插件 ZIP 包
+./gradlew buildPlugin
+
+
+快速编译
+./gradlew compileKotlin
