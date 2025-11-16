@@ -426,7 +426,7 @@ class DependencyTableModel : AbstractTableModel() {
                     append(actualPath, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                 } else {
                     // 文件不存在，先显示提示，再显示预期路径（灰色斜体）
-                    append("【文件不存在】", SimpleTextAttributes(
+                    append("[本地未找到该依赖文件，请先使用包含该依赖的上游仓库构建项目（使依赖下载到本地）后，再通过插件上传至私仓]", SimpleTextAttributes(
                         SimpleTextAttributes.STYLE_BOLD or SimpleTextAttributes.STYLE_ITALIC,
                         java.awt.Color(255, 140, 0) // 橙色，更醒目
                     ))
