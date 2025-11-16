@@ -425,15 +425,16 @@ class DependencyTableModel : AbstractTableModel() {
                     val actualPath = dependency.localPath
                     append(actualPath, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                 } else {
-                    // 文件不存在，显示预期路径并添加提示（灰色斜体）
+                    // 文件不存在，先显示提示，再显示预期路径（灰色斜体）
+                    append("【文件不存在】", SimpleTextAttributes(
+                        SimpleTextAttributes.STYLE_BOLD or SimpleTextAttributes.STYLE_ITALIC,
+                        java.awt.Color(255, 140, 0) // 橙色，更醒目
+                    ))
+                    append(" ", SimpleTextAttributes.REGULAR_ATTRIBUTES)
                     val expectedPath = value?.toString() ?: dependency.getExpectedLocalPath()
                     append(expectedPath, SimpleTextAttributes(
                         SimpleTextAttributes.STYLE_ITALIC,
                         java.awt.Color.GRAY
-                    ))
-                    append(" ⚠ 文件不存在", SimpleTextAttributes(
-                        SimpleTextAttributes.STYLE_BOLD or SimpleTextAttributes.STYLE_ITALIC,
-                        java.awt.Color(255, 140, 0) // 橙色，更醒目
                     ))
                 }
             } else {

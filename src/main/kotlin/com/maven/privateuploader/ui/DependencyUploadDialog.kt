@@ -281,7 +281,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
 
     private fun createToolbarPanel(): JPanel {
         // 主按钮：一键扫描并检查缺失依赖
-        oneClickButton = JButton("一键扫描并检查缺失依赖")
+        oneClickButton = JButton("一键扫描并检查私仓缺失依赖")
         oneClickButton.addActionListener { oneClickScanAndCheck() }
         // 设置主按钮样式，使其更突出
         oneClickButton.font = oneClickButton.font.deriveFont(java.awt.Font.BOLD, oneClickButton.font.size + 1f)
