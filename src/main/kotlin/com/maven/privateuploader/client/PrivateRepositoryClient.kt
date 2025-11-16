@@ -3,18 +3,18 @@ package com.maven.privateuploader.client
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProgressIndicator
 import com.maven.privateuploader.analyzer.PomParser
+import com.maven.privateuploader.model.CheckStatus
 import com.maven.privateuploader.model.DependencyInfo
 import com.maven.privateuploader.model.RepositoryConfig
-import com.maven.privateuploader.model.CheckStatus
-import okhttp3.*
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.buffer
-import okio.sink
 import okio.source
 import java.io.File
-import java.io.IOException
-import java.util.Base64
+import java.util.*
 import java.util.concurrent.TimeUnit
 
 /**
@@ -246,7 +246,7 @@ class PrivateRepositoryClient(private val config: RepositoryConfig) {
                         }
                     }
                 }
-                
+
                 // 上传当前 POM 文件
                 val pomResult = uploadFile(dependency, jarFile, "pom")
                 if (!pomResult.success) {
