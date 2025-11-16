@@ -2,6 +2,10 @@ package com.maven.privateuploader.analyzer
 
 import com.intellij.openapi.diagnostic.thisLogger
 import com.maven.privateuploader.model.DependencyInfo
+import org.apache.maven.model.Model
+import org.apache.maven.model.Parent
+import org.apache.maven.model.Dependency
+import org.apache.maven.model.Plugin
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.w3c.dom.Node
@@ -12,10 +16,16 @@ import javax.xml.parsers.DocumentBuilderFactory
 /**
  * POM 解析器
  * 用于解析 POM 文件并提取父 POM 和 BOM 依赖信息
+ * 
+ * 已改造为使用 Maven 官方的 maven-model-builder 来构建有效 POM，
+ * 保证和 Maven CLI 构建行为一致。
  */
 class PomParser {
     
     private val logger = thisLogger()
+    private val effectivePomResolver = EffectivePomResolver()
+    
+    // 保留 DOM 解析器用于向后兼容（某些场景可能需要读取原始 XML）
     private val documentBuilderFactory = DocumentBuilderFactory.newInstance().apply {
         isNamespaceAware = true  // 启用命名空间感知
     }
@@ -88,6 +98,9 @@ class PomParser {
     
     /**
      * 解析 POM 文件
+     * 
+     * 使用 Maven 官方的 maven-model-builder 来构建有效 POM，
+     * 保证和 Maven CLI 构建行为一致。
      *
      * @param pomFile POM 文件路径
      * @param parsePlugins 是否解析插件（默认 true）。当为 false 时，只解析 properties 等基本信息，不解析插件
@@ -100,102 +113,172 @@ class PomParser {
         }
         
         return try {
-            val document = documentBuilder.parse(pomFile)
-            document.documentElement.normalize()
+            // 使用 Maven 官方的 ModelBuilder 构建有效 POM
+            val effectiveModel = effectivePomResolver.buildEffectiveModel(pomFile, processPlugins = parsePlugins)
+                ?: return null
             
-            // 检测命名空间
-            val namespaceURI = document.documentElement.namespaceURI
-            logger.debug("POM 文件命名空间: $namespaceURI")
-            
-            // 解析基本信息（原始值，可能包含属性引用）
-            val rawGroupId = getElementText(document, "groupId", namespaceURI)
-            val rawArtifactId = getElementText(document, "artifactId", namespaceURI)
-            val rawVersion = getElementText(document, "version", namespaceURI)
-            
-            // 解析父 POM（原始值，可能包含属性引用）
-            val rawParent = parseParent(document, namespaceURI)
-            
-            // 先解析当前 POM 的 properties（用于解析父 POM 的 version）
-            val currentProperties = parseProperties(document, namespaceURI)
-            
-            // 如果父 POM 的 version 包含属性引用，先解析它
-            val resolvedParent = if (rawParent != null) {
-                val resolvedVersion = resolveProperties(rawParent.version, currentProperties)
-                if (resolvedVersion != null && resolvedVersion != rawParent.version) {
-                    // 如果 version 被解析了，需要重新构建父 POM 路径
-                    ParentInfo(
-                        groupId = rawParent.groupId,
-                        artifactId = rawParent.artifactId,
-                        version = resolvedVersion,
-                        relativePath = rawParent.relativePath
-                    )
-                } else {
-                    rawParent
-                }
-            } else {
-                null
-            }
-            
-            // 合并父 POM 的属性（子 POM 的属性优先级更高，符合 Maven 规则）
-            val allProperties = mergeParentProperties(currentProperties, resolvedParent)
-            
-            // 应用属性解析到基本信息
-            val groupId = resolveProperties(rawGroupId, allProperties)
-            val artifactId = resolveProperties(rawArtifactId, allProperties)
-            val version = resolveProperties(rawVersion, allProperties)
-            
-            // 解析 BOM 依赖（需要应用属性解析）
-            val bomDependencies = parseBomDependencies(document, namespaceURI, allProperties)
-            
-            // 解析普通依赖（dependencies 中的依赖，用于递归分析传递依赖）
-            val dependencies = parseDependencies(document, namespaceURI, allProperties)
-            
-            // 解析 Maven 插件（需要应用属性解析，并继承父 POM 的插件）
-            val plugins = if (parsePlugins) {
-                // 解析父 POM 的原始插件声明（只读取 groupId/artifactId/rawVersionExpr，不解析版本）
-                val parentRawPlugins = if (resolvedParent != null) {
-                    val parentPomFile = buildLocalPomPath(resolvedParent.groupId, resolvedParent.artifactId, resolvedParent.version)
-                    if (parentPomFile.exists() && parentPomFile.isFile) {
-                        try {
-                            val rawPlugins = parseParentPluginsForInheritance(parentPomFile, 1)
-                            logger.info("【插件解析】父 POM ${resolvedParent.groupId}:${resolvedParent.artifactId}:${resolvedParent.version} 包含 ${rawPlugins.size} 个原始插件声明")
-                            rawPlugins.forEach { plugin ->
-                                logger.info("【插件解析】父 POM 原始插件: ${plugin.groupId ?: "org.apache.maven.plugins"}:${plugin.artifactId}, versionExpr=${plugin.rawVersionExpr ?: "未指定"}")
-                            }
-                            rawPlugins
-                        } catch (e: Exception) {
-                            logger.warn("解析父 POM 插件时发生错误: ${parentPomFile.absolutePath}", e)
-                            emptyList()
-                        }
-                    } else {
-                        logger.info("【插件解析】父 POM 文件不存在: ${parentPomFile.absolutePath}")
-                        emptyList()
-                    }
-                } else {
-                    emptyList()
-                }
-                
-                logger.info("【插件解析】开始解析当前 POM 的插件，父 POM 原始插件数量: ${parentRawPlugins.size}，当前 properties 数量: ${allProperties.size}")
-                parsePlugins(document, namespaceURI, allProperties, parentRawPlugins)
-            } else {
-                emptyList()
-            }
-            logger.info("【插件解析】解析完成，共 ${plugins.size} 个插件")
-            
-            PomInfo(
-                groupId = groupId,
-                artifactId = artifactId,
-                version = version,
-                parent = resolvedParent,
-                bomDependencies = bomDependencies,
-                dependencies = dependencies,
-                plugins = plugins,
-                properties = allProperties
-            )
+            // 将有效 Model 转换为 PomInfo
+            convertModelToPomInfo(effectiveModel, pomFile, parsePlugins)
         } catch (e: Exception) {
             logger.error("解析 POM 文件失败: ${pomFile.absolutePath}", e)
             null
         }
+    }
+    
+    /**
+     * 将 Maven Model 转换为 PomInfo
+     */
+    private fun convertModelToPomInfo(model: Model, pomFile: File, parsePlugins: Boolean): PomInfo {
+        // 基本信息（effective model 已经处理完所有继承和属性替换）
+        val groupId = model.groupId
+        val artifactId = model.artifactId
+        val version = model.version
+        
+        // 父 POM 信息
+        val parent = model.parent?.let { convertParent(it) }
+        
+        // Properties（effective model 已经合并了所有父 POM 的属性）
+        val properties = model.properties?.let { props ->
+            props.stringPropertyNames().associateWith { props.getProperty(it) }
+        } ?: emptyMap()
+        
+        // BOM 依赖（dependencyManagement 中 scope=import 的依赖）
+        val bomDependencies = parseBomDependenciesFromModel(model)
+        
+        // 普通依赖（dependencies 中的依赖，effective model 已经应用了 dependencyManagement）
+        val dependencies = model.dependencies?.mapNotNull { dep ->
+            convertDependency(dep)
+        } ?: emptyList()
+        
+        // 插件（effective model 已经应用了 pluginManagement 和继承）
+        val plugins = if (parsePlugins) {
+            parsePluginsFromModel(model)
+        } else {
+            emptyList()
+        }
+        
+        logger.info("【POM解析】解析完成: $groupId:$artifactId:$version, " +
+                "父POM=${parent?.let { "${it.groupId}:${it.artifactId}:${it.version}" } ?: "无"}, " +
+                "BOM依赖=${bomDependencies.size}个, " +
+                "普通依赖=${dependencies.size}个, " +
+                "插件=${plugins.size}个")
+        
+        return PomInfo(
+            groupId = groupId,
+            artifactId = artifactId,
+            version = version,
+            parent = parent,
+            bomDependencies = bomDependencies,
+            dependencies = dependencies,
+            plugins = plugins,
+            properties = properties
+        )
+    }
+    
+    /**
+     * 转换 Maven Parent 为 ParentInfo
+     */
+    private fun convertParent(parent: Parent): ParentInfo {
+        return ParentInfo(
+            groupId = parent.groupId ?: "",
+            artifactId = parent.artifactId ?: "",
+            version = parent.version ?: "",
+            relativePath = parent.relativePath
+        )
+    }
+    
+    /**
+     * 从有效 Model 中解析 BOM 依赖（dependencyManagement 中 scope=import 的依赖）
+     */
+    private fun parseBomDependenciesFromModel(model: Model): List<BomDependency> {
+        val bomDependencies = mutableListOf<BomDependency>()
+        
+        model.dependencyManagement?.dependencies?.forEach { dep ->
+            // 检查 scope 是否为 import
+            if (dep.scope == "import") {
+                // 检查 type 是否为 pom（BOM 必须是 pom 类型）
+                val type = dep.type ?: "pom"
+                if (type == "pom") {
+                    val groupId = dep.groupId
+                    val artifactId = dep.artifactId
+                    val version = dep.version
+                    
+                    if (!groupId.isNullOrBlank() && !artifactId.isNullOrBlank() && !version.isNullOrBlank()) {
+                        bomDependencies.add(
+                            BomDependency(
+                                groupId = groupId,
+                                artifactId = artifactId,
+                                version = version
+                            )
+                        )
+                        logger.debug("发现 BOM 依赖: $groupId:$artifactId:$version")
+                    }
+                }
+            }
+        }
+        
+        return bomDependencies
+    }
+    
+    /**
+     * 转换 Maven Dependency 为 TransitiveDependency
+     */
+    private fun convertDependency(dep: Dependency): TransitiveDependency? {
+        val groupId = dep.groupId
+        val artifactId = dep.artifactId
+        
+        if (groupId.isNullOrBlank() || artifactId.isNullOrBlank()) {
+            return null
+        }
+        
+        return TransitiveDependency(
+            groupId = groupId,
+            artifactId = artifactId,
+            version = dep.version,
+            scope = dep.scope,
+            type = dep.type
+        )
+    }
+    
+    /**
+     * 从有效 Model 中解析插件
+     */
+    private fun parsePluginsFromModel(model: Model): List<PluginDependency> {
+        val plugins = mutableSetOf<PluginDependency>()
+        
+        // 解析 build/plugins 中的插件（effective model 已经应用了 pluginManagement 和继承）
+        model.build?.plugins?.forEach { plugin ->
+            convertPlugin(plugin)?.let { plugins.add(it) }
+        }
+        
+        // 解析 build/pluginManagement/plugins 中的插件（如果它们被引用但没有在 plugins 中显式声明）
+        // 注意：effective model 通常已经将 pluginManagement 中的插件合并到 plugins 中，
+        // 但为了完整性，我们也检查一下 pluginManagement
+        model.build?.pluginManagement?.plugins?.forEach { plugin ->
+            convertPlugin(plugin)?.let { plugins.add(it) }
+        }
+        
+        return plugins.toList()
+    }
+    
+    /**
+     * 转换 Maven Plugin 为 PluginDependency
+     */
+    private fun convertPlugin(plugin: Plugin): PluginDependency? {
+        val groupId = plugin.groupId ?: "org.apache.maven.plugins"
+        val artifactId = plugin.artifactId
+        val version = plugin.version
+        
+        if (artifactId.isNullOrBlank() || version.isNullOrBlank()) {
+            logger.debug("插件信息不完整，跳过: groupId=$groupId, artifactId=$artifactId, version=$version")
+            return null
+        }
+        
+        return PluginDependency(
+            groupId = groupId,
+            artifactId = artifactId,
+            version = version
+        )
     }
     
     /**

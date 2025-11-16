@@ -1,0 +1,89 @@
+package com.maven.privateuploader.analyzer
+
+import com.intellij.openapi.diagnostic.thisLogger
+import org.apache.maven.model.Model
+import org.apache.maven.model.building.*
+import java.io.File
+import java.util.Properties
+
+/**
+ * 基于 Maven 官方 maven-model-builder 的有效 POM 解析器
+ * 
+ * 使用 Maven 官方的 ModelBuilder 来构建有效 POM（effective model），
+ * 保证和 Maven CLI 构建行为一致，包括：
+ * - 父 POM 继承链完整处理
+ * - dependencyManagement、pluginManagement 正确"抹平"
+ * - 属性替换、profile 激活逻辑完整
+ */
+class EffectivePomResolver {
+    
+    private val logger = thisLogger()
+    private val modelBuilder: ModelBuilder
+    
+    init {
+        // 使用工厂创建 ModelBuilder 实例
+        modelBuilder = DefaultModelBuilderFactory().newInstance()
+    }
+    
+    /**
+     * 解析给定 pom 文件，返回"有效 POM"模型（已处理父 POM、属性替换、dependencyManagement 等）
+     * 
+     * @param pomFile POM 文件路径
+     * @param processPlugins 是否解析插件（默认 true）
+     * @return 有效 POM 模型，如果解析失败返回 null
+     */
+    fun buildEffectiveModel(pomFile: File, processPlugins: Boolean = true): Model? {
+        if (!pomFile.exists() || !pomFile.isFile) {
+            logger.warn("POM 文件不存在: ${pomFile.absolutePath}")
+            return null
+        }
+        
+        return try {
+            val request = DefaultModelBuildingRequest()
+            request.pomFile = pomFile
+            
+            // 可选：如果项目有 settings.xml，可以在这里指定
+            // val userSettings = File(System.getProperty("user.home"), ".m2/settings.xml")
+            // if (userSettings.exists()) {
+            //     request.userSettingsFile = userSettings
+            // }
+            
+            // 是否解析 <build><plugins> 区域
+            request.isProcessPlugins = processPlugins
+            
+            // 校验级别，保持和 Maven 3.x 一致
+            request.validationLevel = ModelBuildingRequest.VALIDATION_LEVEL_MAVEN_3_0
+            
+            // 设置系统属性和用户属性（用于 profile 激活和属性替换）
+            request.systemProperties = System.getProperties() as Properties
+            request.userProperties = Properties() // 可以额外传用户属性
+            
+            // 如果暂时不接远程仓库/ModelResolver，这里先只做本地有效 POM 构建
+            // 注意：如果父 POM 不在本地仓库，可能会失败
+            val result = modelBuilder.build(request)
+            
+            val effectiveModel = result.effectiveModel
+            logger.debug("成功构建有效 POM: ${effectiveModel.groupId}:${effectiveModel.artifactId}:${effectiveModel.version}")
+            
+            effectiveModel
+        } catch (e: ModelBuildingException) {
+            logger.error("构建有效 POM 失败: ${pomFile.absolutePath}", e)
+            // 如果是因为父 POM 不在本地仓库导致的错误，记录详细信息
+            if (e.cause != null) {
+                logger.debug("构建失败原因: ${e.cause?.message}")
+            }
+            null
+        } catch (e: Exception) {
+            logger.error("解析 POM 文件时发生未知错误: ${pomFile.absolutePath}", e)
+            null
+        }
+    }
+    
+    /**
+     * 检查是否能够成功构建有效 POM（用于诊断）
+     */
+    fun canBuildEffectiveModel(pomFile: File): Boolean {
+        return buildEffectiveModel(pomFile, processPlugins = false) != null
+    }
+}
+

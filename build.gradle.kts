@@ -45,6 +45,12 @@ dependencies {
     implementation("org.apache.poi:poi:5.2.5")
     implementation("org.apache.poi:poi-ooxml:5.2.5")
 
+    // Maven model-builder for POM parsing (official Maven implementation)
+    implementation("org.apache.maven:maven-model-builder:3.9.6")
+    implementation("org.apache.maven:maven-model:3.9.6")
+    implementation("org.apache.maven:maven-settings:3.9.6")
+    implementation("org.apache.maven:maven-settings-builder:3.9.6")
+
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
         create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
