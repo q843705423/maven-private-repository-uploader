@@ -3,14 +3,11 @@ package com.maven.privateuploader.analyzer
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.project.Project
-import com.intellij.psi.search.FilenameIndex
-import com.intellij.psi.search.GlobalSearchScope
+import com.maven.privateuploader.model.CheckStatus
+import com.maven.privateuploader.model.DependencyInfo
 import org.jetbrains.idea.maven.model.MavenArtifact
-import org.jetbrains.idea.maven.model.MavenArtifactNode
 import org.jetbrains.idea.maven.project.MavenProject
 import org.jetbrains.idea.maven.project.MavenProjectsManager
-import com.maven.privateuploader.model.DependencyInfo
-import com.maven.privateuploader.model.CheckStatus
 import java.io.File
 
 /**
@@ -29,7 +26,9 @@ class MavenDependencyAnalyzer(private val project: Project) {
      * @return 依赖信息列表
      */
     fun analyzeDependencies(progressIndicator: ProgressIndicator? = null): List<DependencyInfo> {
-        logger.info("开始分析Maven依赖...")
+        logger.info("=========================================")
+        logger.info("【Maven依赖分析】开始分析Maven依赖...")
+        logger.info("=========================================")
 
         val dependencies = mutableSetOf<DependencyInfo>()
 
@@ -82,7 +81,9 @@ class MavenDependencyAnalyzer(private val project: Project) {
         progressIndicator?.fraction = 1.0
         progressIndicator?.text2 = "依赖分析完成"
 
-        logger.info("依赖分析完成，共发现 ${dependencies.size} 个依赖")
+        logger.info("=========================================")
+        logger.info("【Maven依赖分析】依赖分析完成，共发现 ${dependencies.size} 个依赖")
+        logger.info("=========================================")
 
         // 记录最终找到的依赖列表（前20个）
         dependencies.take(20).forEachIndexed { index, dep ->
@@ -106,23 +107,38 @@ class MavenDependencyAnalyzer(private val project: Project) {
             // 记录项目的基本信息
             logger.info("项目GAV: ${mavenProject.mavenId.groupId}:${mavenProject.mavenId.artifactId}:${mavenProject.mavenId.version}")
 
-            // 分析父POM
-            analyzeParentPom(mavenProject, dependencies)
+            // 分析父POM（递归分析父POM链）
+            logger.info("【父POM分析】开始分析父POM链...")
+            try {
+                val analyzedParents = mutableSetOf<String>() // 用于避免循环依赖
+                analyzeParentPomRecursive(mavenProject, dependencies, analyzedParents)
+                logger.info("【父POM分析】父POM分析完成，当前依赖数: ${dependencies.size}")
+            } catch (e: Exception) {
+                logger.error("【父POM分析】分析父POM时发生异常，继续分析其他依赖", e)
+                // 即使父POM分析失败，也继续分析其他依赖
+            }
 
             // 分析直接依赖
-            logger.info("发现 ${mavenProject.dependencies.size} 个直接依赖")
+            logger.info("【直接依赖分析】开始分析直接依赖，当前依赖数: ${dependencies.size}")
+            logger.info("【直接依赖分析】发现 ${mavenProject.dependencies.size} 个直接依赖")
+            var directDependencyCount = 0
             mavenProject.dependencies.forEachIndexed { index, dependency ->
                 logger.debug("直接依赖 $index: ${dependency.groupId}:${dependency.artifactId}:${dependency.version}, 文件: ${dependency.file}, 包装: ${dependency.packaging}")
                 if (shouldIncludeDependency(dependency, mavenProject)) {
                     val dependencyInfo = createDependencyInfo(dependency)
                     dependencies.add(dependencyInfo)
+                    directDependencyCount++
                     logger.debug("添加直接依赖: ${dependencyInfo.getGAV()}")
                 }
             }
+            logger.info("【直接依赖分析】直接依赖分析完成，添加了 $directDependencyCount 个直接依赖，当前总依赖数: ${dependencies.size}")
 
             // 分析传递依赖树 - 这是关键！
-            logger.info("开始分析传递依赖树...")
+            logger.info("【传递依赖分析】开始分析传递依赖树，当前依赖数: ${dependencies.size}")
+            val dependencyCountBeforeTree = dependencies.size
             analyzeDependencyTree(mavenProject, dependencies)
+            val dependencyCountAfterTree = dependencies.size
+            logger.info("【传递依赖分析】传递依赖树分析完成，新增 ${dependencyCountAfterTree - dependencyCountBeforeTree} 个依赖，当前总依赖数: ${dependencies.size}")
 
             logger.info("项目 ${mavenProject.displayName} 分析完成，当前总依赖数: ${dependencies.size}")
 
@@ -248,9 +264,17 @@ class MavenDependencyAnalyzer(private val project: Project) {
     }
 
     /**
-     * 分析父POM
+     * 递归分析父POM链
+     * 
+     * @param mavenProject Maven项目
+     * @param dependencies 依赖集合
+     * @param analyzedParents 已分析的父POM集合（用于避免循环依赖）
      */
-    private fun analyzeParentPom(mavenProject: MavenProject, dependencies: MutableSet<DependencyInfo>) {
+    private fun analyzeParentPomRecursive(
+        mavenProject: MavenProject,
+        dependencies: MutableSet<DependencyInfo>,
+        analyzedParents: MutableSet<String>
+    ) {
         try {
             // 获取父POM信息
             val parentId = mavenProject.parentId
@@ -261,7 +285,16 @@ class MavenDependencyAnalyzer(private val project: Project) {
                 
                 if (groupId != null && artifactId != null && version != null &&
                     groupId.isNotBlank() && artifactId.isNotBlank() && version.isNotBlank()) {
-                    logger.info("发现父POM: $groupId:$artifactId:$version")
+                    
+                    val parentKey = "$groupId:$artifactId:$version"
+                    
+                    // 检查是否已经分析过（避免循环依赖）
+                    if (analyzedParents.contains(parentKey)) {
+                        logger.debug("父POM $parentKey 已分析过，跳过（避免循环依赖）")
+                        return
+                    }
+                    
+                    logger.info("【父POM分析】发现父POM: $parentKey")
                     
                     // 构建父POM的本地路径
                     val localRepoPath = getLocalMavenRepositoryPath()
@@ -279,7 +312,24 @@ class MavenDependencyAnalyzer(private val project: Project) {
                             selected = false
                         )
                         dependencies.add(parentDependency)
-                        logger.info("添加父POM: ${parentDependency.getGAV()} (${parentPomPath.absolutePath})")
+                        analyzedParents.add(parentKey)
+                        logger.info("【父POM分析】添加父POM: ${parentDependency.getGAV()} (${parentPomPath.absolutePath})")
+                        
+                        // 递归分析父POM的父POM
+                        val pomParser = PomParser()
+                        val pomInfo = pomParser.parsePom(parentPomPath)
+                        if (pomInfo != null && pomInfo.parent != null) {
+                            logger.info("【父POM分析】父POM ${parentDependency.getGAV()} 还有父POM: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}，开始递归分析")
+                            val parentParentDependency = pomParser.parentToDependencyInfo(pomInfo.parent)
+                            if (parentParentDependency != null) {
+                                // 递归分析父POM的父POM
+                                analyzeParentPomFromFile(parentParentDependency.localPath, dependencies, analyzedParents)
+                            } else {
+                                logger.warn("无法构建父POM的父POM依赖信息: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}")
+                            }
+                        } else {
+                            logger.debug("父POM ${parentDependency.getGAV()} 没有父POM，递归结束")
+                        }
                     } else {
                         logger.warn("父POM文件不存在: ${parentPomPath.absolutePath}")
                     }
@@ -291,6 +341,80 @@ class MavenDependencyAnalyzer(private val project: Project) {
             }
         } catch (e: Exception) {
             logger.error("分析父POM时发生错误", e)
+        }
+    }
+    
+    /**
+     * 从POM文件路径递归分析父POM链
+     * 
+     * @param pomFilePath POM文件路径
+     * @param dependencies 依赖集合
+     * @param analyzedParents 已分析的父POM集合（用于避免循环依赖）
+     */
+    private fun analyzeParentPomFromFile(
+        pomFilePath: String,
+        dependencies: MutableSet<DependencyInfo>,
+        analyzedParents: MutableSet<String>
+    ) {
+        try {
+            val pomFile = File(pomFilePath)
+            if (!pomFile.exists() || !pomFile.isFile) {
+                logger.warn("POM文件不存在: ${pomFile.absolutePath}")
+                return
+            }
+            
+            val pomParser = PomParser()
+            val pomInfo = pomParser.parsePom(pomFile)
+            
+            if (pomInfo == null) {
+                logger.warn("无法解析POM文件: ${pomFile.absolutePath}")
+                return
+            }
+            
+            // 添加当前POM到依赖列表（如果还没有添加）
+            // 检查 groupId、artifactId、version 是否完整
+            val groupId = pomInfo.groupId
+            val artifactId = pomInfo.artifactId
+            val version = pomInfo.version
+            
+            if (groupId.isNullOrBlank() || artifactId.isNullOrBlank() || version.isNullOrBlank()) {
+                logger.warn("POM文件信息不完整，跳过: groupId=$groupId, artifactId=$artifactId, version=$version (${pomFile.absolutePath})")
+                return
+            }
+            
+            val currentKey = "$groupId:$artifactId:$version"
+            if (!analyzedParents.contains(currentKey)) {
+                val currentDependency = DependencyInfo(
+                    groupId = groupId,
+                    artifactId = artifactId,
+                    version = version,
+                    packaging = "pom",
+                    localPath = pomFile.absolutePath,
+                    checkStatus = CheckStatus.UNKNOWN,
+                    selected = false
+                )
+                dependencies.add(currentDependency)
+                analyzedParents.add(currentKey)
+                logger.info("【父POM分析】添加父POM: ${currentDependency.getGAV()} (${pomFile.absolutePath})")
+            } else {
+                logger.debug("【父POM分析】父POM $currentKey 已分析过，跳过（避免循环依赖）")
+            }
+            
+            // 递归分析父POM
+            if (pomInfo.parent != null) {
+                logger.info("【父POM分析】POM ${currentKey} 还有父POM: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}，开始递归分析")
+                val parentDependency = pomParser.parentToDependencyInfo(pomInfo.parent)
+                if (parentDependency != null) {
+                    // 递归分析父POM的父POM
+                    analyzeParentPomFromFile(parentDependency.localPath, dependencies, analyzedParents)
+                } else {
+                    logger.warn("无法构建父POM依赖信息: ${pomInfo.parent.groupId}:${pomInfo.parent.artifactId}:${pomInfo.parent.version}")
+                }
+            } else {
+                logger.debug("POM ${currentKey} 没有父POM，递归结束")
+            }
+        } catch (e: Exception) {
+            logger.error("从文件分析父POM时发生错误: $pomFilePath", e)
         }
     }
 
