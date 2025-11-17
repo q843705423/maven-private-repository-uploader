@@ -40,58 +40,74 @@ class MavenDependencyAnalyzer(private val project: Project) {
         logger.info("=========================================")
 
         // 等待Maven项目完全加载（最多等待5秒，每次等待100ms）
-        var allMavenProjects = mavenProjectsManager.projects
+        var rootProjects = mavenProjectsManager.rootProjects
         var waitCount = 0
         val maxWaitCount = 50  // 5秒 = 50 * 100ms
         
-        while (allMavenProjects.isEmpty() && waitCount < maxWaitCount) {
+        while (rootProjects.isEmpty() && waitCount < maxWaitCount) {
             logger.info("等待Maven项目加载... (${waitCount + 1}/$maxWaitCount)")
             Thread.sleep(100)
-            allMavenProjects = mavenProjectsManager.projects
+            rootProjects = mavenProjectsManager.rootProjects
             waitCount++
         }
         
-        if (allMavenProjects.isEmpty()) {
-            logger.warn("等待超时，Maven项目列表仍为空")
+        // 获取根项目的 pom.xml 路径
+        val rootPomPath = when {
+            rootProjects.isNotEmpty() -> {
+                val rootProject = rootProjects.first()
+                File(rootProject.file.path).absolutePath
+            }
+            project.basePath != null -> {
+                val pomFile = File(project.basePath, "pom.xml")
+                if (pomFile.exists()) {
+                    pomFile.absolutePath
+                } else {
+                    null
+                }
+            }
+            else -> null
+        }
+        
+        if (rootPomPath == null) {
+            logger.warn("未找到项目根目录的 pom.xml 文件")
             return emptyList()
         }
 
-        val rootProjects = mavenProjectsManager.rootProjects
-
-        logger.info("Maven项目信息:")
-        logger.info("- 总项目数: ${allMavenProjects.size}")
-        logger.info("- 根项目数: ${rootProjects.size}")
+        logger.info("使用根 POM 文件: $rootPomPath")
         logger.info("- Maven项目管理器状态: ${mavenProjectsManager.state}")
-
-        // 记录所有项目的详细信息
-        allMavenProjects.forEachIndexed { index, mavenProject ->
-            logger.info("项目 $index: ${mavenProject.displayName} (${mavenProject.mavenId.groupId}:${mavenProject.mavenId.artifactId}:${mavenProject.mavenId.version})")
-            logger.info("  路径: ${mavenProject.directory}")
-            logger.info("  打包: ${mavenProject.packaging}")
-            logger.info("  直接依赖数: ${mavenProject.dependencies.size}")
-        }
 
         progressIndicator?.text = "分析Maven项目依赖..."
         progressIndicator?.isIndeterminate = false
 
+        // Maven 超级 POM 中引用的必要插件路径
+        // 这些是 Maven 在超级 POM 中引用的插件，一般固定值
+        // 后续可能会交给用户来配置
+        val folderPaths = listOf(
+            "org/apache/maven/plugins",
+            "org/codehaus/plexus",
+            "org/apache/apache",
+            "org/codehaus/mojo"
+        )
+
         // 使用新的 GavParserGroup 进行依赖分析
+        // getAll 方法只需要项目根目录的 pom.xml，就可以递归解析子模块
         val localRepoPath = getLocalMavenRepositoryPath()
         val gavParserGroup = GavParserGroup(localRepoPath)
         
         try {
-            val dependencies = gavParserGroup.getAllFromMavenProjects(allMavenProjects, progressIndicator)
+            val dependencies = gavParserGroup.getAll(rootPomPath, folderPaths)
 
-        logger.info("=========================================")
+            logger.info("=========================================")
             logger.info("【Maven依赖分析】依赖分析完成，共发现 ${dependencies.size} 个依赖")
-        logger.info("=========================================")
+            logger.info("=========================================")
 
-        // 记录最终找到的依赖列表（前20个）
-        dependencies.take(20).forEachIndexed { index, dep ->
-            logger.info("依赖 $index: ${dep.getGAV()} -> ${dep.localPath}")
-        }
-        if (dependencies.size > 20) {
-            logger.info("... 还有 ${dependencies.size - 20} 个依赖")
-        }
+            // 记录最终找到的依赖列表（前20个）
+            dependencies.take(20).forEachIndexed { index, dep ->
+                logger.info("依赖 $index: ${dep.getGAV()} -> ${dep.localPath}")
+            }
+            if (dependencies.size > 20) {
+                logger.info("... 还有 ${dependencies.size - 20} 个依赖")
+            }
 
             return dependencies
         } catch (e: Exception) {
