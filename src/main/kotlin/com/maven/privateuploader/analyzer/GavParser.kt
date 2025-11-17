@@ -44,12 +44,16 @@ class GavParser(private val env: Env) {
         val plugins = effectiveModel.build.plugins
         for (plugin in plugins) {
             val resolve = pluginResolver.resolve(plugin)
-            gavCollector.add(resolve)
+            if (resolve != null) {
+                gavCollector.add(resolve)
+            }
         }
         val plugins1 = effectiveModel.build.pluginManagement.plugins
         for (plugin in plugins1) {
             val resolve = pluginResolver.resolve(plugin)
-            gavCollector.add(resolve)
+            if (resolve != null) {
+                gavCollector.add(resolve)
+            }
         }
 
         // 检查是否是多模块项目，如果是则递归解析子模块

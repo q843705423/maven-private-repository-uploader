@@ -30,58 +30,6 @@ class DependencyUploadService {
     // 独立的线程池：上传使用3个线程
     private val uploadExecutor: ExecutorService = Executors.newFixedThreadPool(3)
 
-    /**
-     * 执行完整的依赖分析、预检查和上传流程
-     *
-     * @param project 当前项目
-     * @param config 私仓配置
-     * @param onAnalysisComplete 分析完成回调
-     * @param onCheckComplete 检查完成回调
-     * @param onUploadComplete 上传完成回调
-     */
-    fun executeUploadFlow(
-        project: Project,
-        config: RepositoryConfig,
-        onAnalysisComplete: (List<DependencyInfo>) -> Unit = {},
-        onCheckComplete: (List<DependencyInfo>) -> Unit = {},
-        onUploadComplete: (UploadSummary) -> Unit = {}
-    ) {
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "分析Maven依赖", true) {
-            override fun run(indicator: ProgressIndicator) {
-                try {
-                    // 1. 分析Maven依赖
-                    indicator.text = "正在分析Maven依赖..."
-                    val analyzer = MavenDependencyAnalyzer(project)
-
-                    if (!analyzer.isMavenProject()) {
-                        logger.error("当前项目不是Maven项目")
-                        return
-                    }
-
-                    val dependencies = analyzer.analyzeDependencies(indicator)
-                    logger.info("分析完成，共发现 ${dependencies.size} 个依赖")
-
-                    // 在EDT线程中调用回调
-                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-                        onAnalysisComplete(dependencies)
-                    }
-
-                    // 2. 预检查依赖在私仓中的状态
-                    indicator.text = "正在检查私仓中的依赖状态..."
-                    val client = PrivateRepositoryClient(config)
-                    client.checkDependenciesExist(dependencies, indicator)
-
-                    // 在EDT线程中调用回调
-                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-                        onCheckComplete(dependencies)
-                    }
-
-                } catch (e: Exception) {
-                    logger.error("执行依赖分析流程时发生错误", e)
-                }
-            }
-        })
-    }
 
     /**
      * 上传选中的依赖（使用独立线程池）

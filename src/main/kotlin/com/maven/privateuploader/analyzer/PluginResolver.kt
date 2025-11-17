@@ -8,14 +8,24 @@ import java.io.File
  */
 class PluginResolver(private val localRepository: File = getDefaultLocalRepository()) {
     
-    fun resolve(plugin: org.apache.maven.model.Plugin): Gav {
+    fun resolve(plugin: org.apache.maven.model.Plugin?): Gav? {
+        // 检查 plugin 对象是否为 null
+        if (plugin == null) {
+            return null
+        }
+
         var groupId = plugin.groupId
-        val artifactId = plugin.artifactId
-        val version = plugin.version
-        
+        var artifactId = plugin.artifactId
+        var version = plugin.version
+
         // 如果 groupId 为 null，默认为 "org.apache.maven.plugins"
         if (groupId.isNullOrEmpty()) {
             groupId = "org.apache.maven.plugins"
+        }
+
+        // 检查必需的字段，如果为 null 则跳过这个插件
+        if (artifactId.isNullOrEmpty() || version.isNullOrEmpty()) {
+            return null
         }
 
         // 插件通常是 jar 类型
@@ -26,7 +36,7 @@ class PluginResolver(private val localRepository: File = getDefaultLocalReposito
                 artifactId + File.separator +
                 version + File.separator +
                 artifactId + "-" + version + "." + type
-        
+
         val artifactFile = File(localRepository, repoPath)
         val path = artifactFile.absolutePath
 
