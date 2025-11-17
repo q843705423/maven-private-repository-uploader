@@ -213,11 +213,36 @@ The plugin implements comprehensive error handling at each layer:
 - **ATOMIC**: Each commit should represent a complete, functional change
 - **TRACKABLE**: Ensure commit history reflects meaningful development progress
 
+### IDE Management (Plugin Development)
+- **STOP FIRST**: Always stop existing IDEA instance before starting new one
+- **USE BACKGROUND**: Run `./gradlew runIde` in background to avoid blocking command line
+- **CLEAN RESTART**: Use `./gradlew --stop` then `./gradlew runIde` for clean restart
+
 ### Workflow Sequence
 1. Make code changes
 2. Run `./gradlew compileKotlin`
 3. Fix any compilation errors
 4. Repeat compilation until successful
 5. Complete the requirement/feature
-6. Git commit the changes
-7. Move to next requirement
+6. **Stop existing IDEA**: `./gradlew --stop` (if IDE is running)
+7. Git commit the changes
+8. **Start new IDEA**: `./gradlew runIde` (in background)
+9. Move to next requirement
+
+### IDE Management Commands
+```bash
+# Check if Gradle daemons are running
+./gradlew --status
+
+# Stop all Gradle daemons (including running IDEA instances)
+./gradlew --stop
+
+# Start IDEA in development mode (background)
+./gradlew runIde &
+
+# Start IDEA in development mode (foreground)
+./gradlew runIde
+
+# Force clean restart
+./gradlew clean build runIde
+```
