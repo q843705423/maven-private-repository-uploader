@@ -6,7 +6,10 @@
       "WebSearch",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(mvn dependency:tree:*)",
+      "Bash(kotlin:*)",
+      "Bash(kotlinc:*)"
     ],
     "deny": [],
     "ask": []

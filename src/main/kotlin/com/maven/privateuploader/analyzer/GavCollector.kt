@@ -1,5 +1,6 @@
 package com.maven.privateuploader.analyzer
 
+import com.intellij.openapi.diagnostic.thisLogger
 import com.maven.privateuploader.model.DependencyInfo
 import com.maven.privateuploader.model.CheckStatus
 import java.io.File
@@ -15,16 +16,38 @@ import java.nio.file.StandardCopyOption
  * 同时提供转换为 DependencyInfo 的功能
  */
 open class GavCollector {
+    private val logger = thisLogger()
     private val gavs = mutableListOf<Gav>()
     private val keys = mutableSetOf<String>()
 
     open fun add(gav: Gav) {
         val key = gav.toString()
         if (keys.contains(key)) {
+            logger.debug("GAV重复，跳过: $gav")
             return
         }
+
+        // 记录收集到的GAV信息
+        logger.debug("收集到GAV: ${gav.groupId}:${gav.artifactId}:${gav.version}:${gav.type}")
+
+        // 特别关注数据库驱动等runtime依赖
+        if (isRuntimeDependency(gav)) {
+            logger.info("发现Runtime类型依赖: ${gav.groupId}:${gav.artifactId}:${gav.version} [path: ${gav.path}]")
+        }
+
         keys.add(key)
         gavs.add(gav)
+    }
+
+    /**
+     * 判断是否为常见的runtime类型依赖（如数据库驱动等）
+     */
+    private fun isRuntimeDependency(gav: Gav): Boolean {
+        return (gav.groupId.contains("mysql") && gav.artifactId.contains("connector")) ||
+               (gav.groupId.contains("postgresql") && gav.artifactId.contains("postgresql")) ||
+               (gav.artifactId.contains("driver") || gav.artifactId.contains("connector")) ||
+               (gav.groupId.contains("oracle") && gav.artifactId.contains("ojdbc")) ||
+               (gav.groupId.contains("com.microsoft.sqlserver") && gav.artifactId.contains("mssql-jdbc"))
     }
 
     open fun show() {
@@ -45,7 +68,10 @@ open class GavCollector {
      * 转换为 DependencyInfo 列表
      */
     fun toDependencyInfoList(): List<DependencyInfo> {
-        return gavs.map { gav ->
+        logger.info("开始转换GAV列表为DependencyInfo，共 ${gavs.size} 个依赖")
+
+        val result = gavs.map { gav ->
+            logger.debug("转换GAV为DependencyInfo: ${gav.groupId}:${gav.artifactId}:${gav.version}")
             DependencyInfo(
                 groupId = gav.groupId,
                 artifactId = gav.artifactId,
@@ -56,6 +82,18 @@ open class GavCollector {
                 selected = false
             )
         }
+
+        // 统计runtime类型依赖
+        val runtimeDeps = result.filter { dep ->
+            isRuntimeDependency(Gav(dep.groupId, dep.artifactId, dep.version, dep.packaging, dep.localPath))
+        }
+
+        logger.info("转换完成，其中可能的runtime依赖数量: ${runtimeDeps.size}")
+        runtimeDeps.forEach { dep ->
+            logger.info("Runtime依赖: ${dep.groupId}:${dep.artifactId}:${dep.version}")
+        }
+
+        return result
     }
 
     open fun translateTo(targetDir: File) {

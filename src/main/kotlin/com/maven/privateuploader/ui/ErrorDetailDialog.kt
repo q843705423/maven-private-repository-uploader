@@ -5,6 +5,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import com.maven.privateuploader.model.DependencyInfo
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -44,7 +45,9 @@ class ErrorDetailDialog(
         errorTextArea = JBTextArea()
         errorTextArea.isEditable = false
         errorTextArea.font = java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12)
-        errorTextArea.background = java.awt.Color.WHITE
+        // 使用IntelliJ主题系统的背景色，自动适配亮色/暗夜模式
+        errorTextArea.background = UIUtil.getPanelBackground()
+        errorTextArea.foreground = UIUtil.getLabelForeground()
         errorTextArea.lineWrap = true
         errorTextArea.wrapStyleWord = true
 
