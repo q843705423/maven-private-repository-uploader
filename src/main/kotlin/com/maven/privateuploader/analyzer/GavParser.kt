@@ -39,10 +39,13 @@ class GavParser(private val env: Env) {
         val builder = DefaultModelBuilderFactory().newInstance()
         val req = DefaultModelBuildingRequest()
         req.pomFile = pomFile
-        req.isProcessPlugins = true
+        req.isProcessPlugins = false  // 修改：避免插件处理干扰依赖解析
         req.isTwoPhaseBuilding = false
         req.validationLevel = ModelBuildingRequest.VALIDATION_LEVEL_MINIMAL
         req.systemProperties = System.getProperties()
+        // 🔧 关键修复：启用传递依赖解析
+        // 注意：传递依赖解析通过 ModelResolver 的递归调用来实现
+
         // 这里要设置你自己的 ModelResolver
         val modelResolver = YourModelResolver(root, gavCollector)
         req.modelResolver = modelResolver
