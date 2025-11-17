@@ -614,7 +614,8 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                     indicator.text = "正在扫描 Maven 依赖…"
                     
                     val analyzer = com.maven.privateuploader.analyzer.MavenDependencyAnalyzer(project)
-                    val deps = analyzer.analyzeDependencies(indicator)
+
+                    val deps = analyzer.analyzeDependencies(project.basePath,indicator)
 
                     ApplicationManager.getApplication().invokeLater {
                         updateTableData(deps, "扫描完成，共发现 ${deps.size} 个依赖")
@@ -788,7 +789,7 @@ class DependencyUploadDialog(private val project: Project) : DialogWrapper(proje
                     indicator.text = "正在扫描 Maven 依赖…"
                     
                     val analyzer = com.maven.privateuploader.analyzer.MavenDependencyAnalyzer(project)
-                    val deps = analyzer.analyzeDependencies(indicator)
+                    val deps = analyzer.analyzeDependencies(project.basePath,indicator)
 
                     ApplicationManager.getApplication().invokeLater {
                         updateTableData(deps, "扫描完成，共发现 ${deps.size} 个依赖，正在检查私仓…")

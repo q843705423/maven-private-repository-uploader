@@ -35,7 +35,7 @@ class GavParserGroup(private val localRepositoryPath: String) {
             logger.warn("POM 文件不存在: $pomPath")
             // 即使主 POM 不存在，也继续处理文件夹路径
         }else{
-            GavParser(env).parse(localRepositoryPath, gavCollector)
+            GavParser(env).parse(pomPath, gavCollector)
         }
 
 
@@ -48,62 +48,5 @@ class GavParserGroup(private val localRepositoryPath: String) {
         }
     }
     
-    /**
-     * 从 Maven 项目获取所有依赖
-     * 
-     * @param mavenProjects Maven 项目列表
-     * @param progressIndicator 进度指示器（可选）
-     * @return 依赖信息列表
-     */
-    fun getAllFromMavenProjects(
-        mavenProjects: List<MavenProject>,
-        progressIndicator: ProgressIndicator? = null
-    ): List<DependencyInfo> {
-        val env = Env(localRepositoryPath)
-        val gavCollector = GavCollector()
-        
-        val folderPaths = mutableListOf<String>()
-        
-        // 收集所有 Maven 项目的 POM 文件路径
-        mavenProjects.forEach { mavenProject ->
-            val pomFile = mavenProject.file
-            if (pomFile != null) {
-                // 对于 GavBatchParser，我们需要传入项目目录路径，而不是 POM 文件路径
-                // 但 GavBatchParser 会递归查找所有 pom 和 jar 文件
-                // 使用 POM 文件的父目录作为项目目录
-                val pomFileObj = File(pomFile.path)
-                val parentDir = pomFileObj.parent
-                if (parentDir != null) {
-                    folderPaths.add(parentDir)
-                }
-            }
-        }
-        
-        if (folderPaths.isEmpty()) {
-            logger.warn("没有找到有效的 Maven 项目路径")
-            return emptyList()
-        }
-        
-        logger.info("准备分析的文件夹路径: $folderPaths")
-        
-        progressIndicator?.text = "分析 Maven 依赖..."
-        progressIndicator?.isIndeterminate = false
-        
-        try {
-            val batchParser = GavBatchParser(env)
-            batchParser.parseBatch(folderPaths, gavCollector)
-            
-            progressIndicator?.fraction = 1.0
-            progressIndicator?.text2 = "依赖分析完成"
-            
-            val dependencies = gavCollector.toDependencyInfoList()
-            logger.info("依赖分析完成，共发现 ${dependencies.size} 个依赖")
-            
-            return dependencies.sortedBy { it.getGAV() }
-        } catch (e: ModelBuildingException) {
-            logger.error("批量解析 Maven 依赖失败", e)
-            return emptyList()
-        }
-    }
 }
 

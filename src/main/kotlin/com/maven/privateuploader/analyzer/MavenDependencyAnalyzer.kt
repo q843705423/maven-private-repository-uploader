@@ -34,7 +34,7 @@ class MavenDependencyAnalyzer(private val project: Project) {
      * @param progressIndicator 进度指示器
      * @return 依赖信息列表
      */
-    fun analyzeDependencies(progressIndicator: ProgressIndicator? = null): List<DependencyInfo> {
+    fun analyzeDependencies(basePath: String?,progressIndicator: ProgressIndicator? = null): List<DependencyInfo> {
         logger.info("=========================================")
         logger.info("【Maven依赖分析】开始分析Maven依赖...")
         logger.info("=== 🔍 MavenDependencyAnalyzer 调试信息 ===")
@@ -55,54 +55,30 @@ class MavenDependencyAnalyzer(private val project: Project) {
         }
 
         logger.info("检测到的Maven根项目数量: ${rootProjects.size}")
-        rootProjects.forEachIndexed { index, mavenProject ->
-            logger.info("Maven根项目 #$index:")
-            logger.info("  - GroupId: ${mavenProject.mavenId.groupId}")
-            logger.info("  - ArtifactId: ${mavenProject.mavenId.artifactId}")
-            logger.info("  - Version: ${mavenProject.mavenId.version}")
-            logger.info("  - POM路径: ${mavenProject.file.path}")
-            logger.info("  - 打包类型: ${mavenProject.packaging}")
-
-            // 检查是否包含MySQL驱动
-            val dependencies = mavenProject.dependencies
-            val mysqlDeps = dependencies.filter {
-                it.groupId?.contains("mysql", ignoreCase = true) == true ||
-                it.artifactId?.contains("mysql", ignoreCase = true) == true
-            }
-
-            if (mysqlDeps.isNotEmpty()) {
-                logger.info("  - ✅ 发现MySQL依赖: ${mysqlDeps.size}个")
-                mysqlDeps.forEach { dep ->
-                    logger.info("    * ${dep.groupId}:${dep.artifactId}:${dep.version} [scope: ${dep.scope}]")
-                }
-            } else {
-                logger.info("  - ❌ 没有发现MySQL依赖")
-            }
-        }
 
         // 获取根项目的 pom.xml 路径
-        val rootPomPath = when {
-            rootProjects.isNotEmpty() -> {
-                val rootProject = rootProjects.first()
-                File(rootProject.file.path).absolutePath
-            }
-            project.basePath != null -> {
-                val pomFile = File(project.basePath, "pom.xml")
-                if (pomFile.exists()) {
-                    pomFile.absolutePath
-                } else {
-                    null
-                }
-            }
-            else -> null
-        }
+//        val rootPomPath = when {
+//            rootProjects.isNotEmpty() -> {
+//                val rootProject = rootProjects.first()
+//                File(rootProject.file.path).absolutePath
+//            }
+//            project.basePath != null -> {
+//                val pomFile = File(project.basePath, "pom.xml")
+//                if (pomFile.exists()) {
+//                    pomFile.absolutePath
+//                } else {
+//                    null
+//                }
+//            }
+//            else -> null
+//        }
 
-        if (rootPomPath == null) {
+        if (project.basePath == null) {
             logger.warn("未找到项目根目录的 pom.xml 文件")
             return emptyList()
         }
 
-        logger.info("🎯 使用的根 POM 文件: $rootPomPath")
+        logger.info("🎯 使用的根 POM 文件: ${project.basePath}")
         logger.info("🎯 期望的 POM 文件: D:\\code\\java\\stock-recommendations\\pom.xml")
         logger.info("- Maven项目管理器状态: ${mavenProjectsManager.state}")
 
@@ -132,9 +108,10 @@ class MavenDependencyAnalyzer(private val project: Project) {
             val mavenProjects = mavenProjectsManager.projects.toList()
             logger.info("🔧 获取到的Maven项目数量: ${mavenProjects.size}")
 
-            val dependencies = gavParserGroup.getAll(rootPomPath, folderPaths)
+            val pomPath = File(project.basePath, "pom.xml").absolutePath
+            logger.info("获取到项目的pom文件地址:$pomPath")
+            val dependencies = gavParserGroup.getAll(pomPath, folderPaths)
 
-            dependencies.find('mysql-connn').sout
 
 
             logger.info("=========================================")
