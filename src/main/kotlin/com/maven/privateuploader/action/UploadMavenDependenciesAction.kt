@@ -32,7 +32,48 @@ class UploadMavenDependenciesAction : AnAction() {
         val project: Project = e.getRequiredData(CommonDataKeys.PROJECT)
         val uploadService = project.service<DependencyUploadService>()
 
+        // 🔍 调试信息：显示当前项目信息
+        println("=== 🔍 UploadMavenDependenciesAction 调试信息 ===")
+        println("当前项目: ${project.name}")
+        println("项目路径: ${project.basePath}")
+
         // 检查是否为Maven项目
+        val mavenManager = MavenProjectsManager.getInstance(project)
+        val isMavenProject = mavenManager.hasProjects()
+
+        println("是否为Maven项目: $isMavenProject")
+
+        if (isMavenProject) {
+            val mavenProjects = mavenManager.projects
+            println("检测到的Maven项目数量: ${mavenProjects.size}")
+
+            mavenProjects.forEachIndexed { index, mavenProject ->
+                println("Maven项目 #$index:")
+                println("  - GroupId: ${mavenProject.mavenId.groupId}")
+                println("  - ArtifactId: ${mavenProject.mavenId.artifactId}")
+                println("  - Version: ${mavenProject.mavenId.version}")
+                println("  - POM路径: ${mavenProject.file.path}")
+                println("  - 打包类型: ${mavenProject.packaging}")
+
+                // 检查是否包含MySQL驱动
+                val dependencies = mavenProject.dependencies
+                val mysqlDeps = dependencies.filter {
+                    it.groupId?.contains("mysql", ignoreCase = true) == true ||
+                    it.artifactId?.contains("mysql", ignoreCase = true) == true
+                }
+
+                if (mysqlDeps.isNotEmpty()) {
+                    println("  - ✅ 发现MySQL依赖: ${mysqlDeps.size}个")
+                    mysqlDeps.forEach { dep ->
+                        println("    * ${dep.groupId}:${dep.artifactId}:${dep.version} [scope: ${dep.scope}]")
+                    }
+                } else {
+                    println("  - ❌ 没有发现MySQL依赖")
+                }
+            }
+        }
+        println("=== 调试信息结束 ===")
+
         if (!uploadService.isMavenProject(project)) {
             Messages.showErrorDialog(
                 project,

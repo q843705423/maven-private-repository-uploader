@@ -5,7 +5,6 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.maven.privateuploader.model.DependencyInfo
 import org.apache.maven.model.building.ModelBuildingException
 import org.jetbrains.idea.maven.project.MavenProject
-import org.jetbrains.idea.maven.project.MavenProjectsManager
 import java.io.File
 
 /**
@@ -21,23 +20,27 @@ class GavParserGroup(private val localRepositoryPath: String) {
      * 获取所有依赖
      * 
      * @param pomPath 主 POM 文件路径
-     * @param folderPaths 文件夹路径列表（用于批量解析）
+     * @param superPom 对于maven的插件的所有文件夹，需要进行特殊处理，确保不会因为他而没有数据
      * @return 依赖信息列表
      */
-    fun getAll(pomPath: String, folderPaths: List<String>): List<DependencyInfo> {
+    fun getAll(pomPath: String, superPom: List<String>): List<DependencyInfo> {
         val env = Env(localRepositoryPath)
         val gavCollector = GavCollector()
 
         // 注意：原 Java 代码中有个 bug，这里修复了
         // 原代码是 if (pomFile.exists()) throw ...，应该是 if (!pomFile.exists())
         val pomFile = File(pomPath)
+
         if (!pomFile.exists()) {
             logger.warn("POM 文件不存在: $pomPath")
             // 即使主 POM 不存在，也继续处理文件夹路径
+        }else{
+            GavParser(env).parse(localRepositoryPath, gavCollector)
         }
 
+
         try {
-            GavBatchParser(env).parseBatch(folderPaths, gavCollector)
+            GavBatchParser(env).parseBatch(superPom, gavCollector)
             return gavCollector.toDependencyInfoList()
         } catch (e: ModelBuildingException) {
             logger.error("解析 POM 文件失败: $pomPath", e)
